@@ -15,6 +15,7 @@ The code has been organized into the following modules:
 - **`dissolve.py`** - DISSOLVE unlearning implementation with FIM-based weight selection
 - **`ssd.py`** - Selective Synaptic Dampening (SSD) unlearning implementation
 - **`deepclean.py`** - DeepClean unlearning implementation with forget-sensitive weight fine-tuning
+- **`retain_no_reset.py`** - Retain-No-Reset unlearning implementation without weight reset
 
 ### Additional Functionality
 
@@ -83,7 +84,21 @@ python main.py unlearn \
     --finetune_disentanglement_weight 1.0
 ```
 
-#### 5. Baseline Training (excluding one client)
+#### 5. Unlearning with Retain-No-Reset
+
+```bash
+python main.py unlearn \
+    --model_path model.h5 \
+    --target_subset_id 0 \
+    --gamma 0.1 \
+    --beta 0.1 \
+    --lr_unlearn 1e-3 \
+    --epochs_unlearn 50 \
+    --unlearning_type retain-no-reset \
+    --finetune_task both
+```
+
+#### 6. Baseline Training (excluding one client)
 
 ```bash
 python main.py baseline \
@@ -93,7 +108,7 @@ python main.py baseline \
     --model_path baseline_model.h5
 ```
 
-#### 6. Hyperparameter Tuning for SSD
+#### 7. Hyperparameter Tuning for SSD
 
 ```bash
 python main.py tune_ssd \
@@ -215,6 +230,7 @@ You can also call the unlearning methods directly:
 ```python
 from dissolve import dissolve_unlearn_subset
 from deepclean import deepclean_unlearn_subset
+from retain_no_reset import retain_no_reset_unlearn_subset
 
 # DISSOLVE with SGD optimizer and disentanglement loss
 dissolve_model = dissolve_unlearn_subset(
@@ -247,6 +263,22 @@ deepclean_model = deepclean_unlearn_subset(
     finetune_optimizer_type="adam",
     finetune_use_disentanglement_loss=False
 )
+
+# Retain-No-Reset with Adam optimizer
+retain_no_reset_model = retain_no_reset_unlearn_subset(
+    pretrained_model,
+    retain_loader,
+    forget_loader,
+    target_subset_id=0,
+    gamma=0.1,
+    beta=0.1,
+    lr_unlearn=1e-3,
+    epochs_unlearn=50,
+    device=device,
+    finetune_task="both",
+    finetune_optimizer_type="adam",
+    finetune_use_disentanglement_loss=False
+)
 ```
 
 ## Key Features
@@ -272,6 +304,13 @@ deepclean_model = deepclean_unlearn_subset(
 - Forget-sensitive weights are zeroed out then fine-tuned
 - Fine-tuning only on forget-sensitive weights using retain set
 - No modification of retain-sensitive weights
+
+### Retain-No-Reset Unlearning
+- Fisher Information Matrix (FIM) based weight selection
+- Forget-sensitive weights are zeroed out (FIM_Df/FIM_Dr > gamma)
+- Retain-sensitive weights are identified (FIM_Dr/FIM_Df > beta)
+- Fine-tuning only on retain-sensitive weights using retain set
+- No reset of retain-sensitive weights to random initialization
 
 ### Evaluation
 - Comprehensive accuracy metrics for both tasks
@@ -300,6 +339,7 @@ The project requires:
 | `dissolve.py` | DISSOLVE unlearning | `dissolve_unlearn_subset()` |
 | `ssd.py` | SSD unlearning | `ssd_unlearn_subset()`, `ParameterPerturber` |
 | `deepclean.py` | DeepClean unlearning | `deepclean_unlearn_subset()` |
+| `retain_no_reset.py` | Retain-No-Reset unlearning | `retain_no_reset_unlearn_subset()` |
 | `baseline.py` | Baseline training | `learn_baseline_excluding_client()` |
 | `tuning.py` | Hyperparameter optimization | `optimise_ssd_hyperparams()` |
 | `visualization.py` | Plotting | `visualize_mtl_two_heads_results()` |

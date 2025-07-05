@@ -13,6 +13,7 @@ from models import MTL_Two_Heads_ResNet
 from training import learn
 from dissolve import dissolve_unlearn_subset
 from ssd import ssd_unlearn_subset
+from retain_no_reset import retain_no_reset_unlearn_subset
 from baseline import learn_baseline_excluding_client
 from tuning import optimise_ssd_hyperparams
 from visualization import visualize_mtl_two_heads_results
@@ -134,6 +135,25 @@ def unlearn(
                 selection_weighting=selection_weighting,
                 test_loader=test_loader,
             )
+        elif unlearning_type.lower() == "retain-no-reset":
+            # Retain-No-Reset Unlearning
+            model = retain_no_reset_unlearn_subset(
+                model,
+                retain_loader,
+                forget_loader,
+                target_subset_id,
+                gamma,
+                beta,
+                lr_unlearn,
+                epochs_unlearn,
+                device,
+                test_loader=test_loader,
+                finetune_task=finetune_task,
+                fine_tune_heads=fine_tune_heads,
+                dataset_name=dataset_name,
+                num_clients=num_clients,
+                head_size=head_size,
+            )
         else:
             # DeepClean / Dissolve Unlearning
             model = dissolve_unlearn_subset(
@@ -204,7 +224,7 @@ def _build_cli_parser():
     unlearn_parser.add_argument("--head_size", default="big", choices=["big", "medium", "small"], help="Size of the classification heads: big, medium, or small (should match the trained model)")
     unlearn_parser.add_argument("--seed", type=int, default=SEED_DEFAULT, help="Random seed for reproducibility")
     # New: Unlearning type selector
-    unlearn_parser.add_argument("--unlearning_type", choices=["dissolve", "ssd"], default="dissolve", help="Unlearning strategy: 'dissolve' or 'ssd' (Selective Synaptic Dampening)")
+    unlearn_parser.add_argument("--unlearning_type", choices=["dissolve", "ssd", "retain-no-reset"], default="dissolve", help="Unlearning strategy: 'dissolve', 'ssd' (Selective Synaptic Dampening), or 'retain-no-reset'")
 
     # SSD-specific hyperparameters (exposed for advanced control)
     unlearn_parser.add_argument("--ssd_lower_bound", type=float, default=1.0, help="SSD lower_bound parameter (lambda upper cap)")
