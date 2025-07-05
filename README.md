@@ -1,7 +1,3 @@
-# Multi-Task Learning with DISSOLVE and SSD Unlearning
-
-This project implements multi-task learning with two heads (digit classification and subset identification) along with two different unlearning methods: DISSOLVE and Selective Synaptic Dampening (SSD).
-
 ## Project Structure
 
 The code has been organized into the following modules:
