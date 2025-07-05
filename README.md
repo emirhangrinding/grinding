@@ -14,6 +14,7 @@ The code has been organized into the following modules:
 
 - **`dissolve.py`** - DISSOLVE unlearning implementation with FIM-based weight selection
 - **`ssd.py`** - Selective Synaptic Dampening (SSD) unlearning implementation
+- **`deepclean.py`** - DeepClean unlearning implementation with forget-sensitive weight fine-tuning
 
 ### Additional Functionality
 
@@ -64,7 +65,19 @@ python main.py unlearn \
     --ssd_dampening_constant 0.5
 ```
 
-#### 4. Baseline Training (excluding one client)
+#### 4. Unlearning with DeepClean
+
+```bash
+python main.py unlearn \
+    --model_path model.h5 \
+    --target_subset_id 0 \
+    --gamma 0.1 \
+    --lr_unlearn 1e-3 \
+    --epochs_unlearn 50 \
+    --unlearning_type deepclean
+```
+
+#### 5. Baseline Training (excluding one client)
 
 ```bash
 python main.py baseline \
@@ -74,7 +87,7 @@ python main.py baseline \
     --model_path baseline_model.h5
 ```
 
-#### 5. Hyperparameter Tuning for SSD
+#### 6. Hyperparameter Tuning for SSD
 
 ```bash
 python main.py tune_ssd \
@@ -166,7 +179,7 @@ unlearned_model = unlearn(
     fine_tune_heads  = True,             # whether to fine-tune heads
     seed             = 42,
     head_size        = "medium",
-    unlearning_type  = "dissolve"        # "dissolve" or "ssd"
+    unlearning_type  = "dissolve"        # "dissolve", "ssd", or "deepclean"
 )
 ```
 
@@ -187,6 +200,12 @@ unlearned_model = unlearn(
 - Selective synaptic dampening based on parameter importance
 - One-shot weight modification without fine-tuning
 - Configurable dampening parameters
+
+### DeepClean Unlearning
+- Fisher Information Matrix (FIM) based weight selection
+- Forget-sensitive weights are zeroed out then fine-tuned
+- Fine-tuning only on forget-sensitive weights using retain set
+- No modification of retain-sensitive weights
 
 ### Evaluation
 - Comprehensive accuracy metrics for both tasks
@@ -214,6 +233,7 @@ The project requires:
 | `evaluation.py` | Evaluation metrics | `calculate_*_accuracy()`, `get_membership_attack_prob_train_only()` |
 | `dissolve.py` | DISSOLVE unlearning | `dissolve_unlearn_subset()` |
 | `ssd.py` | SSD unlearning | `ssd_unlearn_subset()`, `ParameterPerturber` |
+| `deepclean.py` | DeepClean unlearning | `deepclean_unlearn_subset()` |
 | `baseline.py` | Baseline training | `learn_baseline_excluding_client()` |
 | `tuning.py` | Hyperparameter optimization | `optimise_ssd_hyperparams()` |
 | `visualization.py` | Plotting | `visualize_mtl_two_heads_results()` |
