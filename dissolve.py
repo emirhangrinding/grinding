@@ -56,6 +56,7 @@ def dissolve_unlearn_subset(
     pretrained_model, retain_loader, forget_loader,
     target_subset_id, gamma, beta, lr_unlearn, epochs_unlearn, device,
     test_loader=None, finetune_task="subset", fine_tune_heads: bool = False,
+    finetune_optimizer_type="adam", finetune_use_disentanglement_loss=False, finetune_disentanglement_weight=1.0,
     *, dataset_name: str = "CIFAR10", num_clients: int = 10, head_size: str = 'big'):
     """
     Unlearn subset classification using DISSOLVE method,
@@ -69,6 +70,9 @@ def dissolve_unlearn_subset(
     5. Fine-tune only retain-sensitive weights on retain set
 
     finetune_task: 'subset', 'digit', or 'both'
+    finetune_optimizer_type: 'adam' or 'sgd' for fine-tuning optimizer
+    finetune_use_disentanglement_loss: whether to include disentanglement loss in fine-tuning
+    finetune_disentanglement_weight: weight for disentanglement loss if used
     """
     mode_desc = "ResNet + Heads" if fine_tune_heads else "ResNet only"
     print(f"\n--- Starting DISSOLVE Unlearning for Subset ({mode_desc}) ---")   
@@ -340,7 +344,15 @@ def dissolve_unlearn_subset(
         print("No retain-sensitive parameters to fine-tune. Skipping fine-tuning step.")
     else:
         print(f"Fine-tuning {total_retain_sensitive_weights} retain-sensitive weights (W_r) on D_r for {epochs_unlearn} epoch(s)...")
-        optimizer_ft = optim.Adam(params_to_fine_tune, lr=lr_unlearn)
+        
+        # Create optimizer based on type
+        if finetune_optimizer_type.lower() == "adam":
+            optimizer_ft = optim.Adam(params_to_fine_tune, lr=lr_unlearn)
+        elif finetune_optimizer_type.lower() == "sgd":
+            optimizer_ft = optim.SGD(params_to_fine_tune, lr=lr_unlearn, momentum=0.9)
+        else:
+            raise ValueError(f"finetune_optimizer_type must be 'adam' or 'sgd', got {finetune_optimizer_type}")
+            
         criterion_ft = nn.CrossEntropyLoss()
 
         unlearned_model.train()
@@ -353,7 +365,9 @@ def dissolve_unlearn_subset(
                 digit_labels = digit_labels.to(device)
                 subset_labels = subset_labels.to(device)
                 optimizer_ft.zero_grad()
-                digit_logits, subset_logits, _ = unlearned_model(inputs)
+                digit_logits, subset_logits, disentanglement_loss = unlearned_model(inputs)
+                
+                # Calculate main task loss
                 if finetune_task == "subset":
                     loss = criterion_ft(subset_logits, subset_labels)  # Fine-tuning based on subset classification
                 elif finetune_task == "digit":
@@ -362,6 +376,10 @@ def dissolve_unlearn_subset(
                     loss = 0.6*criterion_ft(digit_logits, digit_labels) + 1.4*criterion_ft(subset_logits, subset_labels)  # Both losses
                 else:
                     raise ValueError(f"finetune_task must be 'subset', 'digit', or 'both', got {finetune_task}")
+                
+                # Add disentanglement loss if requested
+                if finetune_use_disentanglement_loss and disentanglement_loss is not None:
+                    loss = loss + finetune_disentanglement_weight * disentanglement_loss
 
                 loss.backward()
 

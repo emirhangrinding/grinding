@@ -51,7 +51,10 @@ python main.py unlearn \
     --beta 0.1 \
     --lr_unlearn 1e-3 \
     --epochs_unlearn 50 \
-    --unlearning_type dissolve
+    --unlearning_type dissolve \
+    --finetune_optimizer_type adam \
+    --finetune_use_disentanglement_loss \
+    --finetune_disentanglement_weight 0.5
 ```
 
 #### 3. Unlearning with SSD
@@ -74,7 +77,10 @@ python main.py unlearn \
     --gamma 0.1 \
     --lr_unlearn 1e-3 \
     --epochs_unlearn 50 \
-    --unlearning_type deepclean
+    --unlearning_type deepclean \
+    --finetune_optimizer_type sgd \
+    --finetune_use_disentanglement_loss \
+    --finetune_disentanglement_weight 1.0
 ```
 
 #### 5. Baseline Training (excluding one client)
@@ -95,6 +101,24 @@ python main.py tune_ssd \
     --target_subset_id 0 \
     --n_trials 25
 ```
+
+### Fine-tuning Options for Unlearning Methods
+
+The DISSOLVE and DeepClean unlearning methods support several fine-tuning parameters to customize the optimization process:
+
+#### Optimizer Selection
+- `--finetune_optimizer_type` or `finetune_optimizer_type`: Choose between "adam" (default) or "sgd"
+  - Adam: Adaptive learning rate optimizer, generally converges faster
+  - SGD: Stochastic Gradient Descent with momentum (0.9), often more stable
+
+#### Disentanglement Loss Integration
+- `--finetune_use_disentanglement_loss` or `finetune_use_disentanglement_loss`: Whether to include disentanglement loss during fine-tuning (default: False)
+- `--finetune_disentanglement_weight` or `finetune_disentanglement_weight`: Weight for the disentanglement loss component (default: 1.0)
+
+These parameters allow you to control the fine-tuning behavior to better suit your specific unlearning requirements. For example:
+- Use SGD for more stable convergence when dealing with difficult unlearning scenarios
+- Include disentanglement loss to maintain feature separation during fine-tuning
+- Adjust the disentanglement weight to balance between task performance and feature disentanglement
 
 ### Programmatic Usage
 
@@ -163,23 +187,65 @@ from main import unlearn
 from models import MTL_Two_Heads_ResNet
 
 unlearned_model = unlearn(
-    model_path       = "model_200.h5",   # path to trained model
-    target_subset_id = 0,                # client to forget
-    unlearning       = True,             # always True
-    gamma            = 0.1,              # forget-sensitivity threshold
-    beta             = 0.1,              # retain-sensitivity threshold
-    lr_unlearn       = 1e-3,             # learning rate for fine-tuning
-    epochs_unlearn   = 50,               # epochs for fine-tuning
-    model_class      = MTL_Two_Heads_ResNet,
-    dataset_name     = "CIFAR10",
-    num_clients      = 10,
-    batch_size       = 256,
-    data_root        = "./data",
-    finetune_task    = "both",           # "subset", "digit", or "both"
-    fine_tune_heads  = True,             # whether to fine-tune heads
-    seed             = 42,
-    head_size        = "medium",
-    unlearning_type  = "dissolve"        # "dissolve", "ssd", or "deepclean"
+    model_path                        = "model_200.h5",   # path to trained model
+    target_subset_id                  = 0,                # client to forget
+    unlearning                        = True,             # always True
+    gamma                             = 0.1,              # forget-sensitivity threshold
+    beta                              = 0.1,              # retain-sensitivity threshold
+    lr_unlearn                        = 1e-3,             # learning rate for fine-tuning
+    epochs_unlearn                    = 50,               # epochs for fine-tuning
+    model_class                       = MTL_Two_Heads_ResNet,
+    dataset_name                      = "CIFAR10",
+    num_clients                       = 10,
+    batch_size                        = 256,
+    data_root                         = "./data",
+    finetune_task                     = "both",           # "subset", "digit", or "both"
+    fine_tune_heads                   = True,             # whether to fine-tune heads
+    finetune_optimizer_type           = "adam",           # "adam" or "sgd" for fine-tuning
+    finetune_use_disentanglement_loss = False,            # include disentanglement loss in fine-tuning
+    finetune_disentanglement_weight   = 1.0,              # weight for disentanglement loss
+    seed                              = 42,
+    head_size                         = "medium",
+    unlearning_type                   = "dissolve"        # "dissolve", "ssd", or "deepclean"
+)
+```
+
+You can also call the unlearning methods directly:
+
+```python
+from dissolve import dissolve_unlearn_subset
+from deepclean import deepclean_unlearn_subset
+
+# DISSOLVE with SGD optimizer and disentanglement loss
+dissolve_model = dissolve_unlearn_subset(
+    pretrained_model,
+    retain_loader,
+    forget_loader,
+    target_subset_id=0,
+    gamma=0.1,
+    beta=0.1,
+    lr_unlearn=1e-3,
+    epochs_unlearn=50,
+    device=device,
+    finetune_task="both",
+    finetune_optimizer_type="sgd",
+    finetune_use_disentanglement_loss=True,
+    finetune_disentanglement_weight=0.5
+)
+
+# DeepClean with Adam optimizer
+deepclean_model = deepclean_unlearn_subset(
+    pretrained_model,
+    retain_loader,
+    forget_loader,
+    target_subset_id=0,
+    gamma=0.1,
+    lr_unlearn=1e-3,
+    epochs_unlearn=50,
+    device=device,
+    finetune_task="subset",
+    finetune_optimizer_type="adam",
+    finetune_use_disentanglement_loss=False
 )
 ```
 
