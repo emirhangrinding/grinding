@@ -12,6 +12,7 @@ from data import (
 from models import MTL_Two_Heads_ResNet
 from training import learn
 from dissolve import dissolve_unlearn_subset
+from deepclean import deepclean_unlearn_subset
 from ssd import ssd_unlearn_subset
 from retain_no_reset import retain_no_reset_unlearn_subset
 from baseline import learn_baseline_excluding_client
@@ -38,6 +39,10 @@ def unlearn(
     seed: int = SEED_DEFAULT,
     head_size: str = 'big',
     unlearning_type: str = "dissolve",
+    # Fine-tuning parameters
+    finetune_optimizer_type: str = "adam",
+    finetune_use_disentanglement_loss: bool = False,
+    finetune_disentanglement_weight: float = 1.0,
     # SSD-specific hyperparameters
     lower_bound: float = 1.0,
     exponent: float = 1.0,
@@ -150,12 +155,36 @@ def unlearn(
                 test_loader=test_loader,
                 finetune_task=finetune_task,
                 fine_tune_heads=fine_tune_heads,
+                finetune_optimizer_type=finetune_optimizer_type,
+                finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
+                finetune_disentanglement_weight=finetune_disentanglement_weight,
+                dataset_name=dataset_name,
+                num_clients=num_clients,
+                head_size=head_size,
+            )
+        elif unlearning_type.lower() == "deepclean":
+            # DeepClean Unlearning
+            model = deepclean_unlearn_subset(
+                model,
+                retain_loader,
+                forget_loader,
+                target_subset_id,
+                gamma,
+                lr_unlearn,
+                epochs_unlearn,
+                device,
+                test_loader=test_loader,
+                finetune_task=finetune_task,
+                fine_tune_heads=fine_tune_heads,
+                finetune_optimizer_type=finetune_optimizer_type,
+                finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
+                finetune_disentanglement_weight=finetune_disentanglement_weight,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
             )
         else:
-            # DeepClean / Dissolve Unlearning
+            # Dissolve Unlearning
             model = dissolve_unlearn_subset(
                 model,
                 retain_loader,
@@ -169,6 +198,9 @@ def unlearn(
                 test_loader=test_loader,
                 finetune_task=finetune_task,
                 fine_tune_heads=fine_tune_heads,
+                finetune_optimizer_type=finetune_optimizer_type,
+                finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
+                finetune_disentanglement_weight=finetune_disentanglement_weight,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -224,7 +256,12 @@ def _build_cli_parser():
     unlearn_parser.add_argument("--head_size", default="big", choices=["big", "medium", "small"], help="Size of the classification heads: big, medium, or small (should match the trained model)")
     unlearn_parser.add_argument("--seed", type=int, default=SEED_DEFAULT, help="Random seed for reproducibility")
     # New: Unlearning type selector
-    unlearn_parser.add_argument("--unlearning_type", choices=["dissolve", "ssd", "retain-no-reset"], default="dissolve", help="Unlearning strategy: 'dissolve', 'ssd' (Selective Synaptic Dampening), or 'retain-no-reset'")
+    unlearn_parser.add_argument("--unlearning_type", choices=["dissolve", "ssd", "retain-no-reset", "deepclean"], default="dissolve", help="Unlearning strategy: 'dissolve', 'ssd' (Selective Synaptic Dampening), 'retain-no-reset', or 'deepclean'")
+
+    # Fine-tuning parameters (for dissolve, deepclean, and retain-no-reset)
+    unlearn_parser.add_argument("--finetune_optimizer_type", choices=["adam", "sgd"], default="adam", help="Optimizer type for fine-tuning: 'adam' or 'sgd'")
+    unlearn_parser.add_argument("--finetune_use_disentanglement_loss", action="store_true", help="Include disentanglement loss during fine-tuning")
+    unlearn_parser.add_argument("--finetune_disentanglement_weight", type=float, default=1.0, help="Weight for disentanglement loss during fine-tuning")
 
     # SSD-specific hyperparameters (exposed for advanced control)
     unlearn_parser.add_argument("--ssd_lower_bound", type=float, default=1.0, help="SSD lower_bound parameter (lambda upper cap)")
@@ -317,6 +354,9 @@ def main():
             exponent=args.ssd_exponent,
             dampening_constant=args.ssd_dampening_constant,
             selection_weighting=args.ssd_selection_weighting,
+            finetune_optimizer_type=args.finetune_optimizer_type,
+            finetune_use_disentanglement_loss=args.finetune_use_disentanglement_loss,
+            finetune_disentanglement_weight=args.finetune_disentanglement_weight,
         )
 
     elif args.command == "baseline":
