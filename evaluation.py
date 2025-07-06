@@ -79,19 +79,6 @@ def calculate_overall_digit_classification_accuracy(model, data_loader, device):
             total += digit_labels.size(0)
     return correct / total if total > 0 else 0.0
 
-def calculate_overall_subset_identification_accuracy(model, data_loader, device):
-    """Calculate subset-identification accuracy across the entire loader (all subsets combined)."""
-    model.eval()
-    correct, total = 0, 0
-    with torch.no_grad():
-        for inputs, _, subset_labels in data_loader:
-            inputs, subset_labels = inputs.to(device), subset_labels.to(device)
-            _, subset_logits, _ = model(inputs)
-            _, subset_preds = torch.max(subset_logits, 1)
-            correct += (subset_preds == subset_labels).sum().item()
-            total += subset_labels.size(0)
-    return correct / total if total > 0 else 0.0
-
 def _get_model_outputs(loader, model, device):
     """Return concatenated probability vectors for digit and subset heads."""
     model.eval()

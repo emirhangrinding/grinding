@@ -11,7 +11,6 @@ from evaluation import (
     calculate_digit_classification_accuracy,
     calculate_subset_identification_accuracy,
     calculate_overall_digit_classification_accuracy,
-    calculate_overall_subset_identification_accuracy,
     get_membership_attack_prob_train_only
 )
 
@@ -107,8 +106,9 @@ def learn_baseline_excluding_client(
     print(f"[BASELINE] Model weights saved to {path}\n")
 
     # Evaluation loaders
-    # 1) Training data loader (contains only the 9 clients used for training)
-    training_eval_loader = DataLoader(mtl_dataset_included, batch_size=batch_size)
+    # 1) Training data loader (contains only the samples actually seen during optimisation)
+    #    Validation samples are excluded to ensure subset-ID accuracy is computed strictly on the training set.
+    training_eval_loader = DataLoader(train_dataset, batch_size=batch_size)
     
     # 2) Target subset loader (contains only the excluded client)
     excluded_clients_data = {excluded_key: clients_data[excluded_key]}
@@ -141,17 +141,25 @@ def learn_baseline_excluding_client(
     # Metrics
     # Calculate accuracy on the training data (9 clients, excluding target)
     train_digit_acc = calculate_overall_digit_classification_accuracy(model, training_eval_loader, device)
-    train_subset_acc = calculate_overall_subset_identification_accuracy(model, training_eval_loader, device)
-    
-    # Calculate accuracy on the target subset only
-    target_digit_acc = calculate_overall_digit_classification_accuracy(model, target_subset_loader, device)
-    target_subset_acc = calculate_overall_subset_identification_accuracy(model, target_subset_loader, device)
 
-    # Use the individual values for compatibility
+    # Subset-ID accuracy • training set only (other subsets)
+    _sub_tgt_dummy, train_subset_others_acc = calculate_subset_identification_accuracy(
+        model, training_eval_loader, device, target_subset_id
+    )
+
+    # Subset-ID accuracy • target subset (not part of training set)
+    target_subset_acc, _sub_oth_dummy = calculate_subset_identification_accuracy(
+        model, target_subset_loader, device, target_subset_id
+    )
+
+    # Digit accuracy on target subset only
+    target_digit_acc = calculate_overall_digit_classification_accuracy(model, target_subset_loader, device)
+
+    # Consolidate values for summary output
     tgt_acc = target_digit_acc
     oth_acc = train_digit_acc
     sub_tgt_acc = target_subset_acc
-    sub_oth_acc = train_subset_acc
+    sub_oth_acc = train_subset_others_acc
 
     test_digit_tgt, test_digit_oth = calculate_digit_classification_accuracy(model, test_loader, device, target_subset_id)
     test_digit_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)

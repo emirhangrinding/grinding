@@ -8,7 +8,6 @@ from evaluation import (
     calculate_digit_classification_accuracy,
     calculate_subset_identification_accuracy,
     calculate_overall_digit_classification_accuracy,
-    calculate_overall_subset_identification_accuracy,
     get_membership_attack_prob_train_only
 )
 
@@ -336,7 +335,6 @@ def dissolve_unlearn_subset(
     # --- Test set evaluation after modifications ---
     if test_loader is not None:
         test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
-        test_subset_acc = calculate_overall_subset_identification_accuracy(unlearned_model, test_loader, device)
         print(f"[TEST] Digit accuracy after weight modifications: {test_digit_acc:.4f}")
     
     # 7. Fine-tune (only W_r elements should be updated, only resnet)
@@ -414,7 +412,6 @@ def dissolve_unlearn_subset(
                 # --- Test set evaluation after each epoch ---
                 if test_loader is not None:
                     test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
-                    test_subset_acc = calculate_overall_subset_identification_accuracy(unlearned_model, test_loader, device)
                     print(f"    [TEST] Digit accuracy: {test_digit_acc:.4f}")
             else:
                 print(f"  Skipping accuracy calculation after finetuning epoch {epoch+1} as temp_loader is not available.")
