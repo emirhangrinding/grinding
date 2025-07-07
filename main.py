@@ -41,6 +41,7 @@ def unlearn(
     unlearning_type: str = "dissolve",
     # Fine-tuning parameters
     finetune_optimizer_type: str = "adam",
+    finetune_lr_scheduler: str = None,
     finetune_use_disentanglement_loss: bool = False,
     finetune_disentanglement_weight: float = 1.0,
     use_subset_losses_epoch: int = 0,
@@ -157,6 +158,7 @@ def unlearn(
                 finetune_task=finetune_task,
                 fine_tune_heads=fine_tune_heads,
                 finetune_optimizer_type=finetune_optimizer_type,
+                finetune_lr_scheduler=finetune_lr_scheduler,
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
                 use_subset_losses_epoch=use_subset_losses_epoch,
@@ -179,6 +181,7 @@ def unlearn(
                 finetune_task=finetune_task,
                 fine_tune_heads=fine_tune_heads,
                 finetune_optimizer_type=finetune_optimizer_type,
+                finetune_lr_scheduler=finetune_lr_scheduler,
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
                 use_subset_losses_epoch=use_subset_losses_epoch,
@@ -202,6 +205,7 @@ def unlearn(
                 finetune_task=finetune_task,
                 fine_tune_heads=fine_tune_heads,
                 finetune_optimizer_type=finetune_optimizer_type,
+                finetune_lr_scheduler=finetune_lr_scheduler,
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
                 use_subset_losses_epoch=use_subset_losses_epoch,
@@ -248,31 +252,27 @@ def _build_cli_parser():
     unlearn_parser.add_argument("--model_path", required=True, help="Path to the pretrained model weights (e.g., model.h5)")
     unlearn_parser.add_argument("--target_subset_id", type=int, required=True, help="Subset (client) id to unlearn")
     unlearn_parser.add_argument("--gamma", type=float, default=0.1, help="Forget-sensitivity threshold or fraction")
-    unlearn_parser.add_argument("--beta", type=float, default=0.1, help="Retain-sensitivity threshold or fraction")
-    unlearn_parser.add_argument("--lr_unlearn", type=float, default=1e-3, help="Learning rate during unlearning fine-tuning")
-    unlearn_parser.add_argument("--epochs_unlearn", type=int, default=50, help="Fine-tuning epochs during unlearning")
-    unlearn_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10"], help="Dataset name (should match the model)")
-    unlearn_parser.add_argument("--num_clients", type=int, default=10, help="Number of clients/subsets (should match the model)")
-    unlearn_parser.add_argument("--batch_size", type=int, default=256, help="Mini-batch size for data loaders during unlearning")
-    unlearn_parser.add_argument("--data_root", default="./data", help="Root directory for datasets")
-    unlearn_parser.add_argument("--finetune_task", choices=["subset", "digit", "both"], default="both", help="Which task loss to use when fine-tuning")
-    unlearn_parser.add_argument("--fine_tune_heads", action="store_true", help="Whether to also fine-tune the head layers in addition to ResNet")
-    unlearn_parser.add_argument("--head_size", default="big", choices=["big", "medium", "small"], help="Size of the classification heads: big, medium, or small (should match the trained model)")
-    unlearn_parser.add_argument("--seed", type=int, default=SEED_DEFAULT, help="Random seed for reproducibility")
-    # New: Unlearning type selector
-    unlearn_parser.add_argument("--unlearning_type", choices=["dissolve", "ssd", "retain-no-reset", "deepclean"], default="dissolve", help="Unlearning strategy: 'dissolve', 'ssd' (Selective Synaptic Dampening), 'retain-no-reset', or 'deepclean'")
-
-    # Fine-tuning parameters (for dissolve, deepclean, and retain-no-reset)
-    unlearn_parser.add_argument("--finetune_optimizer_type", choices=["adam", "sgd"], default="adam", help="Optimizer type for fine-tuning: 'adam' or 'sgd'")
-    unlearn_parser.add_argument("--finetune_use_disentanglement_loss", action="store_true", help="Include disentanglement loss during fine-tuning")
-    unlearn_parser.add_argument("--finetune_disentanglement_weight", type=float, default=1.0, help="Weight for disentanglement loss during fine-tuning")
-    unlearn_parser.add_argument("--use_subset_losses_epoch", type=int, default=0, help="Epoch after which to add subset losses (only when finetune_use_disentanglement_loss=True)")
-
-    # SSD-specific hyperparameters (exposed for advanced control)
-    unlearn_parser.add_argument("--ssd_lower_bound", type=float, default=1.0, help="SSD lower_bound parameter (lambda upper cap)")
-    unlearn_parser.add_argument("--ssd_exponent", type=float, default=1.0, help="SSD exponent for dampening factor")
-    unlearn_parser.add_argument("--ssd_dampening_constant", type=float, default=0.5, help="SSD dampening_constant parameter")
-    unlearn_parser.add_argument("--ssd_selection_weighting", type=float, default=1.0, help="SSD selection_weighting parameter")
+    unlearn_parser.add_argument("--beta", type=float, default=1.0, help="Retain-sensitivity threshold for DISSOLVE")
+    unlearn_parser.add_argument("--lr_unlearn", type=float, default=1e-4, help="Learning rate for unlearning fine-tuning")
+    unlearn_parser.add_argument("--epochs_unlearn", type=int, default=1, help="Number of epochs for unlearning fine-tuning")
+    unlearn_parser.add_argument("--finetune_task", default="subset", choices=["subset", "digit", "both"], help="Fine-tuning task: subset, digit, or both")
+    unlearn_parser.add_argument("--fine_tune_heads", action="store_true", help="Also fine-tune classification heads during unlearning")
+    unlearn_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10"], help="Dataset to use for unlearning evaluation")
+    unlearn_parser.add_argument("--num_clients", type=int, default=10, help="Number of clients/subsets in original training")
+    unlearn_parser.add_argument("--batch_size", type=int, default=64, help="Mini-batch size for unlearning")
+    unlearn_parser.add_argument("--head_size", default="big", choices=["big", "medium", "small"], help="Size of the classification heads used in the model")
+    unlearn_parser.add_argument("--unlearning_type", default="dissolve", choices=["dissolve", "deepclean", "retain-no-reset", "ssd"], help="Unlearning method to use")
+    # Fine-tuning parameters
+    unlearn_parser.add_argument("--finetune_optimizer_type", default="adam", choices=["adam", "sgd"], help="Optimizer for fine-tuning")
+    unlearn_parser.add_argument("--finetune_lr_scheduler", default=None, choices=["cosine"], help="LR scheduler for fine-tuning")
+    unlearn_parser.add_argument("--finetune_use_disentanglement_loss", action="store_true", help="Use disentanglement loss during fine-tuning")
+    unlearn_parser.add_argument("--finetune_disentanglement_weight", type=float, default=1.0, help="Weight for disentanglement loss")
+    unlearn_parser.add_argument("--use_subset_losses_epoch", type=int, default=0, help="Epoch to start using subset losses (if using disentanglement)")
+    # SSD-specific hyperparameters
+    unlearn_parser.add_argument("--lower_bound", type=float, default=1.0, help="Lower bound for importance score in SSD")
+    unlearn_parser.add_argument("--exponent", type=float, default=1.0, help="SSD exponent for dampening factor")
+    unlearn_parser.add_argument("--dampening_constant", type=float, default=0.5, help="SSD dampening_constant parameter")
+    unlearn_parser.add_argument("--selection_weighting", type=float, default=1.0, help="SSD selection_weighting parameter")
 
     # Baseline sub-command
     baseline_parser = subparsers.add_parser("baseline", help="Train a baseline model excluding one client")
@@ -355,11 +355,12 @@ def main():
             seed=args.seed,
             head_size=args.head_size,
             unlearning_type=args.unlearning_type,
-            lower_bound=args.ssd_lower_bound,
-            exponent=args.ssd_exponent,
-            dampening_constant=args.ssd_dampening_constant,
-            selection_weighting=args.ssd_selection_weighting,
+            lower_bound=args.lower_bound,
+            exponent=args.exponent,
+            dampening_constant=args.dampening_constant,
+            selection_weighting=args.selection_weighting,
             finetune_optimizer_type=args.finetune_optimizer_type,
+            finetune_lr_scheduler=args.finetune_lr_scheduler,
             finetune_use_disentanglement_loss=args.finetune_use_disentanglement_loss,
             finetune_disentanglement_weight=args.finetune_disentanglement_weight,
             use_subset_losses_epoch=args.use_subset_losses_epoch,

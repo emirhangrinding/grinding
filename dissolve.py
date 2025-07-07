@@ -56,7 +56,7 @@ def dissolve_unlearn_subset(
     pretrained_model, retain_loader, forget_loader,
     target_subset_id, gamma, beta, lr_unlearn, epochs_unlearn, device,
     test_loader=None, finetune_task="subset", fine_tune_heads: bool = False,
-    finetune_optimizer_type="adam", finetune_use_disentanglement_loss=False, finetune_disentanglement_weight=1.0,
+    finetune_optimizer_type="adam", finetune_lr_scheduler: str = None, finetune_use_disentanglement_loss=False, finetune_disentanglement_weight=1.0,
     use_subset_losses_epoch=0,
     baseline_metrics=DEFAULT_BASELINE_METRICS,
     *, dataset_name: str = "CIFAR10", num_clients: int = 10, head_size: str = 'big'):
@@ -73,6 +73,7 @@ def dissolve_unlearn_subset(
 
     finetune_task: 'subset', 'digit', or 'both'
     finetune_optimizer_type: 'adam' or 'sgd' for fine-tuning optimizer
+    finetune_lr_scheduler: 'cosine' or None for fine-tuning lr scheduler
     finetune_use_disentanglement_loss: whether to include disentanglement loss in fine-tuning
     finetune_disentanglement_weight: weight for disentanglement loss if used
     use_subset_losses_epoch: epoch after which to add subset losses (only when finetune_use_disentanglement_loss=True)
@@ -363,6 +364,14 @@ def dissolve_unlearn_subset(
         else:
             raise ValueError(f"finetune_optimizer_type must be 'adam' or 'sgd', got {finetune_optimizer_type}")
             
+        # Create LR scheduler if specified
+        scheduler_ft = None
+        if finetune_lr_scheduler:
+            if finetune_lr_scheduler.lower() == 'cosine':
+                scheduler_ft = optim.lr_scheduler.CosineAnnealingLR(optimizer_ft, T_max=epochs_unlearn)
+            else:
+                raise ValueError(f"Unsupported LR scheduler: {finetune_lr_scheduler}")
+
         criterion_ft = nn.CrossEntropyLoss()
 
         unlearned_model.train()
@@ -424,6 +433,10 @@ def dissolve_unlearn_subset(
                 print(f"Fine-tuning Epoch {epoch+1}/{epochs_unlearn}, Loss on D_r: {epoch_loss_ft:.4f}")
             else:
                 print(f"Fine-tuning Epoch {epoch+1}/{epochs_unlearn}, No samples in D_r for fine-tuning.")
+
+            if scheduler_ft:
+                scheduler_ft.step()
+                print(f"  LR after epoch {epoch+1}: {scheduler_ft.get_last_lr()[0]:.6f}")
 
             if temp_loader: # Ensure temp_loader was successfully created
                 unlearned_model.eval() # Set model to evaluation mode for accuracy calculation
