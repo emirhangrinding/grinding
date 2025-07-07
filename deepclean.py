@@ -57,6 +57,7 @@ def deepclean_unlearn_subset(
     target_subset_id, gamma, lr_unlearn, epochs_unlearn, device,
     test_loader=None, finetune_task="subset", fine_tune_heads: bool = False,
     finetune_optimizer_type="adam", finetune_use_disentanglement_loss=False, finetune_disentanglement_weight=1.0,
+    use_subset_losses_epoch=0,
     baseline_metrics=DEFAULT_BASELINE_METRICS,
     *, dataset_name: str = "CIFAR10", num_clients: int = 10, head_size: str = 'big'):
     """
@@ -72,6 +73,7 @@ def deepclean_unlearn_subset(
     finetune_optimizer_type: 'adam' or 'sgd' for fine-tuning optimizer
     finetune_use_disentanglement_loss: whether to include disentanglement loss in fine-tuning
     finetune_disentanglement_weight: weight for disentanglement loss if used
+    use_subset_losses_epoch: epoch after which to add subset losses (only when finetune_use_disentanglement_loss=True)
     baseline_metrics: dict with baseline metrics to track best epoch vs baseline (defaults to standard baseline)
                      Expected keys: 'target_digit_acc', 'other_digit_acc', 'target_subset_acc', 
                                   'other_subset_acc', 'test_digit_acc'
@@ -283,22 +285,34 @@ def deepclean_unlearn_subset(
                 optimizer_ft.zero_grad()
                 digit_logits, subset_logits, features = unlearned_model(inputs, return_features=True)
                 
-                # Calculate main task loss
-                if finetune_task == "subset":
-                    loss = criterion_ft(subset_logits, subset_labels)  # Fine-tuning based on subset classification
-                elif finetune_task == "digit":
-                    loss = criterion_ft(digit_logits, digit_labels)    # Fine-tuning based on digit classification
-                elif finetune_task == "both":
-                    loss = 0.6*criterion_ft(digit_logits, digit_labels) + 1.4*criterion_ft(subset_logits, subset_labels)  # Both losses
+                # Calculate main task loss with epoch-based subset loss logic
+                if finetune_use_disentanglement_loss and use_subset_losses_epoch > 0 and epoch < use_subset_losses_epoch:
+                    # Only use digit loss before the specified epoch (similar to training.py logic)
+                    loss = criterion_ft(digit_logits, digit_labels)
                 else:
-                    raise ValueError(f"finetune_task must be 'subset', 'digit', or 'both', got {finetune_task}")
+                    # Original logic for all epochs when condition not met
+                    if finetune_task == "subset":
+                        loss = criterion_ft(subset_logits, subset_labels)  # Fine-tuning based on subset classification
+                    elif finetune_task == "digit":
+                        loss = criterion_ft(digit_logits, digit_labels)    # Fine-tuning based on digit classification
+                    elif finetune_task == "both":
+                        loss = 0.6*criterion_ft(digit_logits, digit_labels) + 1.4*criterion_ft(subset_logits, subset_labels)  # Both losses
+                    else:
+                        raise ValueError(f"finetune_task must be 'subset', 'digit', or 'both', got {finetune_task}")
                 
-                # Add disentanglement loss if requested
+                # Add disentanglement loss if requested (only after the specified epoch when use_subset_losses_epoch > 0)
                 if finetune_use_disentanglement_loss:
-                    from utils import intra_y1_y2_disentanglement_loss
-                    disentanglement_loss = intra_y1_y2_disentanglement_loss(features, digit_labels, subset_labels, 
-                                                                           lambda_pull=1.0, lambda_push=1.0)
-                    loss = loss + finetune_disentanglement_weight * disentanglement_loss
+                    if use_subset_losses_epoch > 0 and epoch >= use_subset_losses_epoch:
+                        from utils import intra_y1_y2_disentanglement_loss
+                        disentanglement_loss = intra_y1_y2_disentanglement_loss(features, digit_labels, subset_labels, 
+                                                                               lambda_pull=1.0, lambda_push=1.0)
+                        loss = loss + finetune_disentanglement_weight * disentanglement_loss
+                    elif use_subset_losses_epoch == 0:
+                        # If use_subset_losses_epoch is 0, always add disentanglement loss (original behavior)
+                        from utils import intra_y1_y2_disentanglement_loss
+                        disentanglement_loss = intra_y1_y2_disentanglement_loss(features, digit_labels, subset_labels, 
+                                                                               lambda_pull=1.0, lambda_push=1.0)
+                        loss = loss + finetune_disentanglement_weight * disentanglement_loss
 
                 loss.backward()
 

@@ -43,6 +43,7 @@ def unlearn(
     finetune_optimizer_type: str = "adam",
     finetune_use_disentanglement_loss: bool = False,
     finetune_disentanglement_weight: float = 1.0,
+    use_subset_losses_epoch: int = 0,
     # SSD-specific hyperparameters
     lower_bound: float = 1.0,
     exponent: float = 1.0,
@@ -158,6 +159,7 @@ def unlearn(
                 finetune_optimizer_type=finetune_optimizer_type,
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
+                use_subset_losses_epoch=use_subset_losses_epoch,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -179,6 +181,7 @@ def unlearn(
                 finetune_optimizer_type=finetune_optimizer_type,
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
+                use_subset_losses_epoch=use_subset_losses_epoch,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -201,6 +204,7 @@ def unlearn(
                 finetune_optimizer_type=finetune_optimizer_type,
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
+                use_subset_losses_epoch=use_subset_losses_epoch,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -262,6 +266,7 @@ def _build_cli_parser():
     unlearn_parser.add_argument("--finetune_optimizer_type", choices=["adam", "sgd"], default="adam", help="Optimizer type for fine-tuning: 'adam' or 'sgd'")
     unlearn_parser.add_argument("--finetune_use_disentanglement_loss", action="store_true", help="Include disentanglement loss during fine-tuning")
     unlearn_parser.add_argument("--finetune_disentanglement_weight", type=float, default=1.0, help="Weight for disentanglement loss during fine-tuning")
+    unlearn_parser.add_argument("--use_subset_losses_epoch", type=int, default=0, help="Epoch after which to add subset losses (only when finetune_use_disentanglement_loss=True)")
 
     # SSD-specific hyperparameters (exposed for advanced control)
     unlearn_parser.add_argument("--ssd_lower_bound", type=float, default=1.0, help="SSD lower_bound parameter (lambda upper cap)")
@@ -357,6 +362,7 @@ def main():
             finetune_optimizer_type=args.finetune_optimizer_type,
             finetune_use_disentanglement_loss=args.finetune_use_disentanglement_loss,
             finetune_disentanglement_weight=args.finetune_disentanglement_weight,
+            use_subset_losses_epoch=args.use_subset_losses_epoch,
         )
 
     elif args.command == "baseline":
