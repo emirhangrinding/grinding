@@ -281,7 +281,7 @@ def deepclean_unlearn_subset(
                 digit_labels = digit_labels.to(device)
                 subset_labels = subset_labels.to(device)
                 optimizer_ft.zero_grad()
-                digit_logits, subset_logits, disentanglement_loss = unlearned_model(inputs)
+                digit_logits, subset_logits, features = unlearned_model(inputs, return_features=True)
                 
                 # Calculate main task loss
                 if finetune_task == "subset":
@@ -294,7 +294,10 @@ def deepclean_unlearn_subset(
                     raise ValueError(f"finetune_task must be 'subset', 'digit', or 'both', got {finetune_task}")
                 
                 # Add disentanglement loss if requested
-                if finetune_use_disentanglement_loss and disentanglement_loss is not None:
+                if finetune_use_disentanglement_loss:
+                    from utils import intra_y1_y2_disentanglement_loss
+                    disentanglement_loss = intra_y1_y2_disentanglement_loss(features, digit_labels, subset_labels, 
+                                                                           lambda_pull=1.0, lambda_push=1.0)
                     loss = loss + finetune_disentanglement_weight * disentanglement_loss
 
                 loss.backward()
