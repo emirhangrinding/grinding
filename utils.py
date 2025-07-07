@@ -6,6 +6,15 @@ import torch.nn as nn
 # Global seed utility for reproducibility
 SEED_DEFAULT = 42
 
+# Default baseline metrics for unlearning experiments
+DEFAULT_BASELINE_METRICS = {
+    'target_digit_acc': 0.9056,
+    'other_digit_acc': 0.9998, 
+    'target_subset_acc': 0.0000,
+    'other_subset_acc': 0.9974,
+    'test_digit_acc': 0.9130
+}
+
 def set_global_seed(seed: int = SEED_DEFAULT):
     """Set random seeds for Python, NumPy and PyTorch to ensure reproducibility."""
     random.seed(seed)
@@ -123,4 +132,63 @@ def dirichlet_partition(dataset, num_clients=10, alpha=0.6, num_classes=10, seed
         split_idxs = np.split(idxs, splits)
         for i, client_idx in enumerate(client_indices):
             client_idx.extend(split_idxs[i].tolist())
-    return client_indices 
+    return client_indices
+
+def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=None):
+    """
+    Calculate how close current metrics are to baseline metrics using weighted absolute differences.
+    
+    Args:
+        current_metrics: dict with keys: 'target_digit_acc', 'other_digit_acc', 
+                        'target_subset_acc', 'other_subset_acc', 'test_digit_acc'
+        baseline_metrics: dict with same keys as current_metrics
+        weights: dict with same keys for weighting different metrics (optional)
+    
+    Returns:
+        float: delta score (lower is closer to baseline)
+    """
+    if weights is None:
+        # Default equal weights for all metrics
+        weights = {
+            'target_digit_acc': 1.0,
+            'other_digit_acc': 1.0, 
+            'target_subset_acc': 1.0,
+            'other_subset_acc': 1.0,
+            'test_digit_acc': 1.0
+        }
+    
+    delta = 0.0
+    total_weight = 0.0
+    
+    for key in current_metrics:
+        if key in baseline_metrics and key in weights:
+            delta += weights[key] * abs(current_metrics[key] - baseline_metrics[key])
+            total_weight += weights[key]
+    
+    # Normalize by total weight to get average weighted delta
+    return delta / total_weight if total_weight > 0 else float('inf')
+
+def track_best_epoch_vs_baseline(epoch, current_metrics, baseline_metrics, best_epoch_info, weights=None):
+    """
+    Track which epoch produces results closest to baseline metrics.
+    
+    Args:
+        epoch: current epoch number (1-indexed)
+        current_metrics: dict of current epoch metrics
+        baseline_metrics: dict of baseline metrics to compare against
+        best_epoch_info: dict to store best epoch info (modified in-place)
+        weights: optional dict of metric weights
+    
+    Returns:
+        tuple: (current_delta_score, is_best_so_far)
+    """
+    current_delta = calculate_baseline_delta_score(current_metrics, baseline_metrics, weights)
+    
+    is_best = False
+    if 'best_delta' not in best_epoch_info or current_delta < best_epoch_info['best_delta']:
+        best_epoch_info['best_delta'] = current_delta
+        best_epoch_info['best_epoch'] = epoch
+        best_epoch_info['best_metrics'] = current_metrics.copy()
+        is_best = True
+    
+    return current_delta, is_best 

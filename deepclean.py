@@ -10,6 +10,7 @@ from evaluation import (
     calculate_overall_digit_classification_accuracy,
     get_membership_attack_prob_train_only
 )
+from utils import track_best_epoch_vs_baseline, DEFAULT_BASELINE_METRICS
 
 def calculate_fim_diagonal_subset(model, dataloader, device):
     """
@@ -56,6 +57,7 @@ def deepclean_unlearn_subset(
     target_subset_id, gamma, lr_unlearn, epochs_unlearn, device,
     test_loader=None, finetune_task="subset", fine_tune_heads: bool = False,
     finetune_optimizer_type="adam", finetune_use_disentanglement_loss=False, finetune_disentanglement_weight=1.0,
+    baseline_metrics=DEFAULT_BASELINE_METRICS,
     *, dataset_name: str = "CIFAR10", num_clients: int = 10, head_size: str = 'big'):
     """
     Unlearn subset classification using DeepClean method,
@@ -70,6 +72,9 @@ def deepclean_unlearn_subset(
     finetune_optimizer_type: 'adam' or 'sgd' for fine-tuning optimizer
     finetune_use_disentanglement_loss: whether to include disentanglement loss in fine-tuning
     finetune_disentanglement_weight: weight for disentanglement loss if used
+    baseline_metrics: dict with baseline metrics to track best epoch vs baseline (defaults to standard baseline)
+                     Expected keys: 'target_digit_acc', 'other_digit_acc', 'target_subset_acc', 
+                                  'other_subset_acc', 'test_digit_acc'
     """
     mode_desc = "ResNet + Heads" if fine_tune_heads else "ResNet only"
     print(f"\n--- Starting DeepClean Unlearning for Subset ({mode_desc}) ---")   
@@ -251,6 +256,11 @@ def deepclean_unlearn_subset(
     else:
         print(f"Fine-tuning {total_forget_sensitive_weights} forget-sensitive weights (W_f) on D_r for {epochs_unlearn} epoch(s)...")
         
+        # Initialize baseline tracking
+        best_epoch_info = {}
+        if baseline_metrics is not None:
+            print("Tracking epoch closest to baseline metrics...")
+        
         # Create optimizer based on type
         if finetune_optimizer_type.lower() == "adam":
             optimizer_ft = optim.Adam(params_to_fine_tune, lr=lr_unlearn)
@@ -318,15 +328,40 @@ def deepclean_unlearn_subset(
                 print(f"  Unlearned subset ID accuracy on target subset after finetuning epoch {epoch+1}: {unlearned_subset_target_acc:.4f}")
                 print(f"  Unlearned subset ID accuracy on other subsets after finetuning epoch {epoch+1}: {unlearned_subset_other_acc:.4f}")
                 # --- Test set evaluation after each epoch ---
+                test_digit_acc = None
                 if test_loader is not None:
                     test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
                     print(f"    [TEST] Digit accuracy: {test_digit_acc:.4f}")
+                
+                # Track epoch closest to baseline
+                if baseline_metrics is not None:
+                    current_metrics = {
+                        'target_digit_acc': unlearned_target_accuracy,
+                        'other_digit_acc': unlearned_other_accuracy,
+                        'target_subset_acc': unlearned_subset_target_acc,
+                        'other_subset_acc': unlearned_subset_other_acc,
+                        'test_digit_acc': test_digit_acc if test_digit_acc is not None else 0.0
+                    }
+                    delta_score, is_best = track_best_epoch_vs_baseline(
+                        epoch + 1, current_metrics, baseline_metrics, best_epoch_info
+                    )
+                    print(f"    Delta from baseline: {delta_score:.6f}" + (" (BEST SO FAR)" if is_best else ""))
             else:
                 print(f"  Skipping accuracy calculation after finetuning epoch {epoch+1} as temp_loader is not available.")
             
             unlearned_model.train()  # Set back to training mode for next epoch
 
         unlearned_model.eval()
+        
+        # Report best epoch vs baseline
+        if baseline_metrics is not None and 'best_epoch' in best_epoch_info:
+            print(f"\n--- BASELINE TRACKING SUMMARY ---")
+            print(f"Best epoch (closest to baseline): {best_epoch_info['best_epoch']}")
+            print(f"Best delta score: {best_epoch_info['best_delta']:.6f}")
+            print(f"Best epoch metrics:")
+            for key, value in best_epoch_info['best_metrics'].items():
+                baseline_val = baseline_metrics.get(key, 0.0)
+                print(f"  {key}: {value:.4f} (baseline: {baseline_val:.4f}, diff: {abs(value - baseline_val):.4f})")
 
     print(f"--- DeepClean Unlearning Finished ({mode_desc}) ---")
 
