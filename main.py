@@ -50,6 +50,8 @@ def unlearn(
     exponent: float = 1.0,
     dampening_constant: float = 0.5,
     selection_weighting: float = 1.0,
+    # Fisher Information calculation
+    calculate_fisher_on: str = "subset",
 ):
     """
     Load the pretrained model weights and perform DISSOLVE unlearning
@@ -141,6 +143,7 @@ def unlearn(
                 dampening_constant=dampening_constant,
                 selection_weighting=selection_weighting,
                 test_loader=test_loader,
+                calculate_fisher_on=calculate_fisher_on,
             )
         elif unlearning_type.lower() == "retain-no-reset":
             # Retain-No-Reset Unlearning
@@ -162,6 +165,7 @@ def unlearn(
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
                 use_subset_losses_epoch=use_subset_losses_epoch,
+                calculate_fisher_on=calculate_fisher_on,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -185,6 +189,7 @@ def unlearn(
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
                 use_subset_losses_epoch=use_subset_losses_epoch,
+                calculate_fisher_on=calculate_fisher_on,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -209,6 +214,7 @@ def unlearn(
                 finetune_use_disentanglement_loss=finetune_use_disentanglement_loss,
                 finetune_disentanglement_weight=finetune_disentanglement_weight,
                 use_subset_losses_epoch=use_subset_losses_epoch,
+                calculate_fisher_on=calculate_fisher_on,
                 dataset_name=dataset_name,
                 num_clients=num_clients,
                 head_size=head_size,
@@ -273,6 +279,8 @@ def _build_cli_parser():
     unlearn_parser.add_argument("--exponent", type=float, default=1.0, help="SSD exponent for dampening factor")
     unlearn_parser.add_argument("--dampening_constant", type=float, default=0.5, help="SSD dampening_constant parameter")
     unlearn_parser.add_argument("--selection_weighting", type=float, default=1.0, help="SSD selection_weighting parameter")
+    # Fisher Information calculation
+    unlearn_parser.add_argument("--calculate_fisher_on", default="subset", choices=["digit", "subset"], help="Calculate Fisher Information on 'digit' or 'subset' task")
 
     # Baseline sub-command
     baseline_parser = subparsers.add_parser("baseline", help="Train a baseline model excluding one client")
@@ -364,6 +372,7 @@ def main():
             finetune_use_disentanglement_loss=args.finetune_use_disentanglement_loss,
             finetune_disentanglement_weight=args.finetune_disentanglement_weight,
             use_subset_losses_epoch=args.use_subset_losses_epoch,
+            calculate_fisher_on=args.calculate_fisher_on,
         )
 
     elif args.command == "baseline":

@@ -12,10 +12,19 @@ from evaluation import (
 )
 from utils import track_best_epoch_vs_baseline, DEFAULT_BASELINE_METRICS
 
-def calculate_fim_diagonal_subset(model, dataloader, device):
+def calculate_fim_diagonal(model, dataloader, device, calculate_fisher_on="subset"):
     """
-    Calculate the diagonal of the Fisher Information Matrix for the subset identification task.
+    Calculate the diagonal of the Fisher Information Matrix.
+    
+    Args:
+        model: The neural network model
+        dataloader: DataLoader containing the data
+        device: Device to run computations on
+        calculate_fisher_on: Either "digit" or "subset" to specify which task to calculate FIM for
     """
+    if calculate_fisher_on not in ["digit", "subset"]:
+        raise ValueError(f"calculate_fisher_on must be 'digit' or 'subset', got {calculate_fisher_on}")
+    
     model.eval()
     fim_diag = {name: torch.zeros_like(param) for name, param in model.named_parameters() if param.requires_grad}
     num_batches_processed = 0  # count number of batches instead of individual samples
@@ -27,13 +36,25 @@ def calculate_fim_diagonal_subset(model, dataloader, device):
     criterion = nn.CrossEntropyLoss()
 
     # SSD-style FIM: one backward pass per batch
-    for inputs, _digit_labels, subset_labels in dataloader:
-        inputs, subset_labels = inputs.to(device), subset_labels.to(device)
+    for inputs, digit_labels, subset_labels in dataloader:
+        inputs = inputs.to(device)
+        
+        # Choose the appropriate labels and logits based on task
+        if calculate_fisher_on == "digit":
+            labels = digit_labels.to(device)
+        else:  # calculate_fisher_on == "subset"
+            labels = subset_labels.to(device)
 
         # Forward + backward pass for the whole batch
         model.zero_grad()
-        _digit_logits, subset_logits, _ = model(inputs)
-        loss = criterion(subset_logits, subset_labels)  # mean reduction by default
+        digit_logits, subset_logits, _ = model(inputs)
+        
+        # Choose the appropriate logits based on task
+        if calculate_fisher_on == "digit":
+            loss = criterion(digit_logits, labels)
+        else:  # calculate_fisher_on == "subset"
+            loss = criterion(subset_logits, labels)
+        
         loss.backward()
 
         # Accumulate squared gradients
@@ -59,6 +80,7 @@ def deepclean_unlearn_subset(
     finetune_optimizer_type="adam", finetune_lr_scheduler: str = None, finetune_use_disentanglement_loss=False, finetune_disentanglement_weight=1.0,
     use_subset_losses_epoch=0,
     baseline_metrics=DEFAULT_BASELINE_METRICS,
+    calculate_fisher_on="subset",
     *, dataset_name: str = "CIFAR10", num_clients: int = 10, head_size: str = 'big'):
     """
     Unlearn subset classification using DeepClean method,
@@ -84,11 +106,11 @@ def deepclean_unlearn_subset(
     unlearned_model = copy.deepcopy(pretrained_model)
     unlearned_model.to(device)
 
-    # 1. Calculate FIM diagonals for subset task
-    print("Calculating FIM diagonal for D_f (forget set - target subset)...")
-    fim_df = calculate_fim_diagonal_subset(unlearned_model, forget_loader, device)
-    print("Calculating FIM diagonal for D_r (retain set - other subsets)...")
-    fim_dr = calculate_fim_diagonal_subset(unlearned_model, retain_loader, device)
+    # 1. Calculate FIM diagonals for the specified task
+    print(f"Calculating FIM diagonal for D_f (forget set - target subset) on {calculate_fisher_on} task...")
+    fim_df = calculate_fim_diagonal(unlearned_model, forget_loader, device, calculate_fisher_on)
+    print(f"Calculating FIM diagonal for D_r (retain set - other subsets) on {calculate_fisher_on} task...")
+    fim_dr = calculate_fim_diagonal(unlearned_model, retain_loader, device, calculate_fisher_on)
 
     # Determine adaptive thresholds for forget-sensitive weights
     # If `gamma` is < 1 it is interpreted as a fraction (e.g. 0.10 -> top 10%).

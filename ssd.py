@@ -42,20 +42,33 @@ class ParameterPerturber:
         """Return a dict with the same keys as model.named_parameters() but zeros."""
         return {name: torch.zeros_like(p, device=self.device) for name, p in self.model.named_parameters()}
 
-    def calc_importance(self, dataloader: DataLoader) -> Dict[str, torch.Tensor]:
-        """Compute Fisher-style importance scores for subset identification task."""
+    def calc_importance(self, dataloader: DataLoader, calculate_fisher_on: str = "subset") -> Dict[str, torch.Tensor]:
+        """Compute Fisher-style importance scores for the specified task."""
+        if calculate_fisher_on not in ["digit", "subset"]:
+            raise ValueError(f"calculate_fisher_on must be 'digit' or 'subset', got {calculate_fisher_on}")
+            
         criterion = nn.CrossEntropyLoss()
         importances = self._zero_like_param_dict()
         if len(dataloader.dataset) == 0:
             return importances
 
-        for inputs, _digit_labels, subset_labels in dataloader:
+        for inputs, digit_labels, subset_labels in dataloader:
             inputs = inputs.to(self.device)
-            subset_labels = subset_labels.to(self.device)
+            
+            # Choose the appropriate labels based on task
+            if calculate_fisher_on == "digit":
+                labels = digit_labels.to(self.device)
+            else:  # calculate_fisher_on == "subset"
+                labels = subset_labels.to(self.device)
 
-            # forward through the model – we care about subset head here
-            _digit_logits, subset_logits, _ = self.model(inputs)
-            loss = criterion(subset_logits, subset_labels)
+            # forward through the model
+            digit_logits, subset_logits, _ = self.model(inputs)
+            
+            # Choose the appropriate logits based on task
+            if calculate_fisher_on == "digit":
+                loss = criterion(digit_logits, labels)
+            else:  # calculate_fisher_on == "subset"
+                loss = criterion(subset_logits, labels)
 
             # accumulate squared gradients
             self.model.zero_grad()
@@ -103,6 +116,7 @@ def ssd_unlearn_subset(
     dampening_constant: float = 0.5,
     selection_weighting: float = 1.0,
     test_loader: DataLoader = None,
+    calculate_fisher_on: str = "subset",
 ) -> nn.Module:
     """Apply Selective Synaptic Dampening (SSD) to forget a target subset.
 
@@ -123,10 +137,10 @@ def ssd_unlearn_subset(
         selection_weighting=selection_weighting,
     )
 
-    print("Computing parameter importances on retain/general set …")
-    imp_retain = perturber.calc_importance(retain_loader)
-    print("Computing parameter importances on forget set …")
-    imp_forget = perturber.calc_importance(forget_loader)
+    print(f"Computing parameter importances on retain/general set for {calculate_fisher_on} task …")
+    imp_retain = perturber.calc_importance(retain_loader, calculate_fisher_on)
+    print(f"Computing parameter importances on forget set for {calculate_fisher_on} task …")
+    imp_forget = perturber.calc_importance(forget_loader, calculate_fisher_on)
 
     print("Applying synaptic dampening …")
     perturber.apply_dampening(imp_retain, imp_forget)

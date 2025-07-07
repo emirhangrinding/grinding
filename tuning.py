@@ -56,6 +56,7 @@ def optimise_ssd_hyperparams(
             dampening_constant=lam,
             selection_weighting=1.0,
             test_loader=None,             # we compute custom metrics below to avoid duplicate work
+            calculate_fisher_on="subset",  # default to subset task for tuning
         )
 
         # Compute metrics
