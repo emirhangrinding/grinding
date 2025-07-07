@@ -296,7 +296,7 @@ def deepclean_unlearn_subset(
                     elif finetune_task == "digit":
                         loss = criterion_ft(digit_logits, digit_labels)    # Fine-tuning based on digit classification
                     elif finetune_task == "both":
-                        loss = 0.6*criterion_ft(digit_logits, digit_labels) + 1.4*criterion_ft(subset_logits, subset_labels)  # Both losses
+                        loss = criterion_ft(digit_logits, digit_labels) + criterion_ft(subset_logits, subset_labels)  # Both losses
                     else:
                         raise ValueError(f"finetune_task must be 'subset', 'digit', or 'both', got {finetune_task}")
                 
@@ -306,13 +306,13 @@ def deepclean_unlearn_subset(
                         from utils import intra_y1_y2_disentanglement_loss
                         disentanglement_loss = intra_y1_y2_disentanglement_loss(features, digit_labels, subset_labels, 
                                                                                lambda_pull=1.0, lambda_push=1.0)
-                        loss = loss + finetune_disentanglement_weight * disentanglement_loss
+                        loss = loss + criterion_ft(subset_logits, subset_labels) + finetune_disentanglement_weight * disentanglement_loss
                     elif use_subset_losses_epoch == 0:
                         # If use_subset_losses_epoch is 0, always add disentanglement loss (original behavior)
                         from utils import intra_y1_y2_disentanglement_loss
                         disentanglement_loss = intra_y1_y2_disentanglement_loss(features, digit_labels, subset_labels, 
                                                                                lambda_pull=1.0, lambda_push=1.0)
-                        loss = loss + finetune_disentanglement_weight * disentanglement_loss
+                        loss = loss + criterion_ft(subset_logits, subset_labels) + finetune_disentanglement_weight * disentanglement_loss
 
                 loss.backward()
 
