@@ -5,7 +5,8 @@ from utils import set_global_seed, DEFAULT_BASELINE_METRICS, calculate_baseline_
 from ssd import ssd_unlearn_subset
 from evaluation import (
     calculate_digit_classification_accuracy,
-    calculate_subset_identification_accuracy
+    calculate_subset_identification_accuracy,
+    get_membership_attack_prob_train_only
 )
 
 def optimise_ssd_hyperparams(
@@ -26,6 +27,7 @@ def optimise_ssd_hyperparams(
         • target_subset_acc: 0.0000
         • other_subset_acc: 0.9974
         • test_digit_acc: 0.9130
+        • mia_score: 75.44
 
     The objective minimises the weighted absolute difference between current metrics
     and baseline metrics. Lower score ⇒ closer to baseline performance.
@@ -64,13 +66,17 @@ def optimise_ssd_hyperparams(
         # Calculate overall test digit accuracy (average of target and other)
         test_digit_overall = (test_digit_tgt + test_digit_other) / 2.0
 
+        # Calculate MIA score
+        mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
+
         # Format current metrics to match baseline structure
         current_metrics = {
             'target_digit_acc': test_digit_tgt,
             'other_digit_acc': test_digit_other,
             'target_subset_acc': test_subset_tgt,
             'other_subset_acc': test_subset_other,
-            'test_digit_acc': test_digit_overall
+            'test_digit_acc': test_digit_overall,
+            'mia_score': mia_score
         }
 
         # Calculate distance to baseline metrics (lower is better)
@@ -83,7 +89,8 @@ def optimise_ssd_hyperparams(
             f"Other Digit={test_digit_other:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_digit_acc']:.4f}), "
             f"Target Subset={test_subset_tgt:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_subset_acc']:.4f}), "
             f"Other Subset={test_subset_other:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_subset_acc']:.4f}), "
-            f"Test Digit Overall={test_digit_overall:.4f} (baseline: {DEFAULT_BASELINE_METRICS['test_digit_acc']:.4f}) | "
+            f"Test Digit Overall={test_digit_overall:.4f} (baseline: {DEFAULT_BASELINE_METRICS['test_digit_acc']:.4f}), "
+            f"MIA={mia_score:.2f}% (baseline: {DEFAULT_BASELINE_METRICS['mia_score']:.2f}%) | "
             f"Delta Score={delta_score:.4f}"
         )
 
@@ -93,6 +100,7 @@ def optimise_ssd_hyperparams(
         trial.set_user_attr("target_subset_acc", test_subset_tgt)
         trial.set_user_attr("other_subset_acc", test_subset_other)
         trial.set_user_attr("test_digit_acc", test_digit_overall)
+        trial.set_user_attr("mia_score", mia_score)
         trial.set_user_attr("delta_score", delta_score)
 
         return delta_score
@@ -106,10 +114,13 @@ def optimise_ssd_hyperparams(
     # Print best metrics vs baseline
     best_trial = study.best_trial
     print("\nBest trial metrics vs baseline:")
-    metrics_to_show = ['target_digit_acc', 'other_digit_acc', 'target_subset_acc', 'other_subset_acc', 'test_digit_acc']
+    metrics_to_show = ['target_digit_acc', 'other_digit_acc', 'target_subset_acc', 'other_subset_acc', 'test_digit_acc', 'mia_score']
     for metric in metrics_to_show:
         current_val = best_trial.user_attrs[metric]
         baseline_val = DEFAULT_BASELINE_METRICS[metric]
-        print(f"  {metric}: {current_val:.4f} (baseline: {baseline_val:.4f}, diff: {abs(current_val - baseline_val):.4f})")
+        if metric == 'mia_score':
+            print(f"  {metric}: {current_val:.2f}% (baseline: {baseline_val:.2f}%, diff: {abs(current_val - baseline_val):.2f}%)")
+        else:
+            print(f"  {metric}: {current_val:.4f} (baseline: {baseline_val:.4f}, diff: {abs(current_val - baseline_val):.4f})")
 
     return study 
