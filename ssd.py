@@ -117,12 +117,15 @@ def ssd_unlearn_subset(
     selection_weighting: float = 1.0,
     test_loader: DataLoader = None,
     calculate_fisher_on: str = "subset",
-) -> nn.Module:
+) -> tuple:
     """Apply Selective Synaptic Dampening (SSD) to forget a target subset.
 
     This method does NOT perform any further fine-tuning – the weights are
     multiplicatively dampened in a single shot.  The routine mirrors the output
     style of the other unlearning pipelines for consistency.
+    
+    Returns:
+        tuple: (unlearned_model, metrics_dict) where metrics_dict contains the calculated accuracies
     """
 
     print("\n--- Starting Selective Synaptic Dampening (SSD) Unlearning ---")
@@ -170,6 +173,7 @@ def ssd_unlearn_subset(
     print(f"Subset ID accuracy on other subsets after SSD: {sub_oth_acc:.4f}")
 
     # Test set evaluation
+    test_digit_acc = None
     if test_loader is not None:
         test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
         print(f"[TEST] Digit accuracy after SSD: {test_digit_acc:.4f}")
@@ -179,4 +183,15 @@ def ssd_unlearn_subset(
     print(f"Train-only MIA Score on forget set after SSD: {mia_score:.4f}")
 
     print("--- SSD Unlearning Finished ---")
-    return unlearned_model 
+    
+    # Return both model and metrics
+    metrics = {
+        'target_digit_acc': tgt_acc,
+        'other_digit_acc': oth_acc,
+        'target_subset_acc': sub_tgt_acc,
+        'other_subset_acc': sub_oth_acc,
+        'test_digit_acc': test_digit_acc,
+        'mia_score': mia_score
+    }
+    
+    return unlearned_model, metrics 

@@ -132,7 +132,7 @@ def unlearn(
 
         if unlearning_type.lower() == "ssd":
             # SSD Unlearning
-            model = ssd_unlearn_subset(
+            model, _ = ssd_unlearn_subset(
                 model,
                 retain_loader,
                 forget_loader,
