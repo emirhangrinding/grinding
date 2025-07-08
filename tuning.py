@@ -1,7 +1,7 @@
 import optuna
 from torch.utils.data import DataLoader
 
-from utils import set_global_seed
+from utils import set_global_seed, DEFAULT_BASELINE_METRICS, calculate_baseline_delta_score
 from ssd import ssd_unlearn_subset
 from evaluation import (
     calculate_digit_classification_accuracy,
@@ -20,25 +20,19 @@ def optimise_ssd_hyperparams(
 ):
     """Run TPE search to tune SSD hyper-parameters α (exponent) and λ (dampening_constant).
 
-    The optimisation maximises a scalar score crafted from the requested criteria:
+    The optimisation minimises the distance to baseline metrics:
+        • target_digit_acc: 0.9056
+        • other_digit_acc: 0.9998
+        • target_subset_acc: 0.0000
+        • other_subset_acc: 0.9974
+        • test_digit_acc: 0.9130
 
-        • minimise train accuracy on forget set (digit & subset)
-        • maximise train accuracy on retain set (digit & subset)
-        • maximise average test accuracy (digit & subset, all subsets)
-
-    The score is constructed as:
-
-        score =  (
-            train_digit_retain  - train_digit_forget
-          + train_subset_retain - train_subset_forget
-          + test_avg
-        )
-
-    Higher score ⇒ better according to the above desiderata.  All terms lie in [0,1].
+    The objective minimises the weighted absolute difference between current metrics
+    and baseline metrics. Lower score ⇒ closer to baseline performance.
     """
 
     sampler = optuna.samplers.TPESampler(seed=seed)
-    study = optuna.create_study(direction="maximize", sampler=sampler)
+    study = optuna.create_study(direction="minimize", sampler=sampler)
 
     def _objective(trial):
         alpha = trial.suggest_float("alpha", 0.1, 100.0, log=True)
@@ -59,65 +53,63 @@ def optimise_ssd_hyperparams(
             calculate_fisher_on="subset",  # default to subset task for tuning
         )
 
-        # Compute metrics
-        # Train accuracies
-        # Forget loader → accuracy on *target* subset (should be data present)
-        train_digit_forget, _ = calculate_digit_classification_accuracy(
-            unlearned_model, forget_loader, device, target_subset_id
-        )
-        train_subset_forget, _ = calculate_subset_identification_accuracy(
-            unlearned_model, forget_loader, device, target_subset_id
-        )
-
-        # Retain loader → accuracy on *other* subsets
-        _tmp_tgt, train_digit_retain = calculate_digit_classification_accuracy(
-            unlearned_model, retain_loader, device, target_subset_id
-        )
-        _tmp_tgt2, train_subset_retain = calculate_subset_identification_accuracy(
-            unlearned_model, retain_loader, device, target_subset_id
-        )
-
-        # Test accuracies (all subsets)
+        # Compute test accuracies to match baseline metric format
         test_digit_tgt, test_digit_other = calculate_digit_classification_accuracy(
             unlearned_model, test_loader, device, target_subset_id
         )
         test_subset_tgt, test_subset_other = calculate_subset_identification_accuracy(
             unlearned_model, test_loader, device, target_subset_id
         )
-        test_avg = (
-            test_digit_tgt + test_digit_other
-        ) / 4.0
+        
+        # Calculate overall test digit accuracy (average of target and other)
+        test_digit_overall = (test_digit_tgt + test_digit_other) / 2.0
 
-        # Scalar objective
-        score = (
-            (train_digit_retain - train_digit_forget)
-            + (train_subset_retain - train_subset_forget)
-            + test_avg
-        )
+        # Format current metrics to match baseline structure
+        current_metrics = {
+            'target_digit_acc': test_digit_tgt,
+            'other_digit_acc': test_digit_other,
+            'target_subset_acc': test_subset_tgt,
+            'other_subset_acc': test_subset_other,
+            'test_digit_acc': test_digit_overall
+        }
 
-        # Verbose output so the user can monitor per-trial metrics (including TEST accuracies)
+        # Calculate distance to baseline metrics (lower is better)
+        delta_score = calculate_baseline_delta_score(current_metrics, DEFAULT_BASELINE_METRICS)
+
+        # Verbose output so the user can monitor per-trial metrics
         print(
             f"[Trial {trial.number:03d}] α={alpha:.4f}, λ={lam:.4f} | "
-            f"Train-Fgt Dig={train_digit_forget:.4f}, Train-Ret Dig={train_digit_retain:.4f} | "
-            f"Train-Fgt Sub={train_subset_forget:.4f}, Train-Ret Sub={train_subset_retain:.4f} | "
-            f"[TEST] Dig-Tgt={test_digit_tgt:.4f}, Dig-Oth={test_digit_other:.4f}, "
-            f"Sub-Tgt={test_subset_tgt:.4f}, Sub-Oth={test_subset_other:.4f} | "
-            f"Score={score:.4f}"
+            f"Target Digit={test_digit_tgt:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_digit_acc']:.4f}), "
+            f"Other Digit={test_digit_other:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_digit_acc']:.4f}), "
+            f"Target Subset={test_subset_tgt:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_subset_acc']:.4f}), "
+            f"Other Subset={test_subset_other:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_subset_acc']:.4f}), "
+            f"Test Digit Overall={test_digit_overall:.4f} (baseline: {DEFAULT_BASELINE_METRICS['test_digit_acc']:.4f}) | "
+            f"Delta Score={delta_score:.4f}"
         )
 
         # Keep track for analysis
-        trial.set_user_attr("train_digit_forget", train_digit_forget)
-        trial.set_user_attr("train_digit_retain", train_digit_retain)
-        trial.set_user_attr("train_subset_forget", train_subset_forget)
-        trial.set_user_attr("train_subset_retain", train_subset_retain)
-        trial.set_user_attr("test_avg", test_avg)
+        trial.set_user_attr("target_digit_acc", test_digit_tgt)
+        trial.set_user_attr("other_digit_acc", test_digit_other)
+        trial.set_user_attr("target_subset_acc", test_subset_tgt)
+        trial.set_user_attr("other_subset_acc", test_subset_other)
+        trial.set_user_attr("test_digit_acc", test_digit_overall)
+        trial.set_user_attr("delta_score", delta_score)
 
-        return score
+        return delta_score
 
     study.optimize(_objective, n_trials=n_trials, show_progress_bar=True)
 
     print("\nOptuna optimisation completed.")
-    print("Best score: {:.4f}".format(study.best_value))
+    print("Best delta score (closest to baseline): {:.4f}".format(study.best_value))
     print("Best hyper-parameters (α, λ):", study.best_params)
+    
+    # Print best metrics vs baseline
+    best_trial = study.best_trial
+    print("\nBest trial metrics vs baseline:")
+    metrics_to_show = ['target_digit_acc', 'other_digit_acc', 'target_subset_acc', 'other_subset_acc', 'test_digit_acc']
+    for metric in metrics_to_show:
+        current_val = best_trial.user_attrs[metric]
+        baseline_val = DEFAULT_BASELINE_METRICS[metric]
+        print(f"  {metric}: {current_val:.4f} (baseline: {baseline_val:.4f}, diff: {abs(current_val - baseline_val):.4f})")
 
     return study 
