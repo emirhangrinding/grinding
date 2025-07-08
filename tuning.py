@@ -33,6 +33,10 @@ def optimise_ssd_hyperparams(
     and baseline metrics. Lower score ⇒ closer to baseline performance.
     """
 
+    # Extended baseline metrics including MIA
+    BASELINE_METRICS_WITH_MIA = DEFAULT_BASELINE_METRICS.copy()
+    BASELINE_METRICS_WITH_MIA['mia_score'] = 75.44
+
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(direction="minimize", sampler=sampler)
 
@@ -80,17 +84,17 @@ def optimise_ssd_hyperparams(
         }
 
         # Calculate distance to baseline metrics (lower is better)
-        delta_score = calculate_baseline_delta_score(current_metrics, DEFAULT_BASELINE_METRICS)
+        delta_score = calculate_baseline_delta_score(current_metrics, BASELINE_METRICS_WITH_MIA)
 
         # Verbose output so the user can monitor per-trial metrics
         print(
             f"[Trial {trial.number:03d}] α={alpha:.4f}, λ={lam:.4f} | "
-            f"Target Digit={test_digit_tgt:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_digit_acc']:.4f}), "
-            f"Other Digit={test_digit_other:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_digit_acc']:.4f}), "
-            f"Target Subset={test_subset_tgt:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_subset_acc']:.4f}), "
-            f"Other Subset={test_subset_other:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_subset_acc']:.4f}), "
-            f"Test Digit Overall={test_digit_overall:.4f} (baseline: {DEFAULT_BASELINE_METRICS['test_digit_acc']:.4f}), "
-            f"MIA={mia_score:.2f}% (baseline: {DEFAULT_BASELINE_METRICS['mia_score']:.2f}%) | "
+            f"Target Digit={test_digit_tgt:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['target_digit_acc']:.4f}), "
+            f"Other Digit={test_digit_other:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['other_digit_acc']:.4f}), "
+            f"Target Subset={test_subset_tgt:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['target_subset_acc']:.4f}), "
+            f"Other Subset={test_subset_other:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['other_subset_acc']:.4f}), "
+            f"Test Digit Overall={test_digit_overall:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['test_digit_acc']:.4f}), "
+            f"MIA={mia_score:.2f}% (baseline: {BASELINE_METRICS_WITH_MIA['mia_score']:.2f}%) | "
             f"Delta Score={delta_score:.4f}"
         )
 
@@ -117,7 +121,7 @@ def optimise_ssd_hyperparams(
     metrics_to_show = ['target_digit_acc', 'other_digit_acc', 'target_subset_acc', 'other_subset_acc', 'test_digit_acc', 'mia_score']
     for metric in metrics_to_show:
         current_val = best_trial.user_attrs[metric]
-        baseline_val = DEFAULT_BASELINE_METRICS[metric]
+        baseline_val = BASELINE_METRICS_WITH_MIA[metric]
         if metric == 'mia_score':
             print(f"  {metric}: {current_val:.2f}% (baseline: {baseline_val:.2f}%, diff: {abs(current_val - baseline_val):.2f}%)")
         else:
