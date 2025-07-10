@@ -6,11 +6,17 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import MNIST, CIFAR10
 
-from utils import set_global_seed, SEED_DEFAULT
+from utils import set_global_seed, SEED_DEFAULT, DEFAULT_BASELINE_METRICS, calculate_baseline_delta_score
 from data import generate_subdatasets, MultiTaskDataset, transform_mnist, transform_test_cifar, create_subset_data_loaders
 from models import MTL_Two_Heads_ResNet
 from tuning import optimise_ssd_hyperparams
 from ssd import ssd_unlearn_subset
+from evaluation import (
+    calculate_digit_classification_accuracy,
+    calculate_subset_identification_accuracy,
+    calculate_overall_digit_classification_accuracy,
+    get_membership_attack_prob_train_only
+)
 
 # Configuration - EDIT THESE VALUES
 MODEL_PATH = "/kaggle/input/latest-medium/pytorch/default/1/model_medium.h5" 
@@ -85,6 +91,64 @@ def finetune_subset_identification(model, retain_loader, device, epochs=10, lr=1
     
     print("--- Finetuning completed ---")
     return model
+
+def evaluate_all_metrics(model, retain_loader, forget_loader, test_loader, device, target_subset_id):
+    """
+    Comprehensive evaluation of all metrics after unlearning/finetuning.
+    
+    Returns:
+        dict: Dictionary containing all evaluation metrics
+    """
+    print("\n--- Comprehensive Evaluation ---")
+    
+    # Create combined loader for evaluation
+    combined_dataset = []
+    for batch_idx, (inputs, digit_labels, subset_labels) in enumerate(retain_loader):
+        for i in range(inputs.size(0)):
+            combined_dataset.append((inputs[i], digit_labels[i], subset_labels[i]))
+    
+    for batch_idx, (inputs, digit_labels, subset_labels) in enumerate(forget_loader):
+        for i in range(inputs.size(0)):
+            combined_dataset.append((inputs[i], digit_labels[i], subset_labels[i]))
+    
+    class _TempDataset(torch.utils.data.Dataset):
+        def __init__(self, data_list):
+            self.data = data_list
+        def __len__(self):
+            return len(self.data)
+        def __getitem__(self, idx):
+            return self.data[idx]
+    
+    combined_loader = DataLoader(_TempDataset(combined_dataset), batch_size=retain_loader.batch_size, shuffle=False)
+    
+    # Calculate digit classification accuracies
+    target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(
+        model, combined_loader, device, target_subset_id
+    )
+    
+    # Calculate subset identification accuracies
+    target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(
+        model, combined_loader, device, target_subset_id
+    )
+    
+    # Calculate test digit accuracy
+    test_digit_acc = None
+    if test_loader is not None:
+        test_digit_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
+    
+    # Calculate MIA score
+    mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
+    
+    metrics = {
+        'target_digit_acc': target_digit_acc,
+        'other_digit_acc': other_digit_acc,
+        'target_subset_acc': target_subset_acc,
+        'other_subset_acc': other_subset_acc,
+        'test_digit_acc': test_digit_acc,
+        'mia_score': mia_score
+    }
+    
+    return metrics
 
 # Setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -175,7 +239,7 @@ unlearned_model, ssd_metrics = ssd_unlearn_subset(
     calculate_fisher_on=CALCULATE_FISHER_ON
 )
 
-print("\nSSD Results:")
+print("\nSSD Results (before finetuning):")
 print(f"Target Digit Accuracy: {ssd_metrics['target_digit_acc']:.4f}")
 print(f"Other Digit Accuracy: {ssd_metrics['other_digit_acc']:.4f}")
 print(f"Target Subset Accuracy: {ssd_metrics['target_subset_acc']:.4f}")
@@ -192,4 +256,50 @@ finetuned_model = finetune_subset_identification(
     lr=FINETUNE_LR
 )
 
-print("\nFinetuning completed! The model has been trained for 10 additional epochs focusing on subset identification.")
+# Comprehensive evaluation after finetuning
+final_metrics = evaluate_all_metrics(
+    model=finetuned_model,
+    retain_loader=retain_loader,
+    forget_loader=forget_loader,
+    test_loader=test_loader,
+    device=device,
+    target_subset_id=TARGET_SUBSET_ID
+)
+
+print("\nFinal Results (after SSD + finetuning):")
+print(f"Target Digit Accuracy: {final_metrics['target_digit_acc']:.4f}")
+print(f"Other Digit Accuracy: {final_metrics['other_digit_acc']:.4f}")
+print(f"Target Subset Accuracy: {final_metrics['target_subset_acc']:.4f}")
+print(f"Other Subset Accuracy: {final_metrics['other_subset_acc']:.4f}")
+print(f"Test Digit Accuracy: {final_metrics['test_digit_acc']:.4f}")
+print(f"MIA Score: {final_metrics['mia_score']:.2f}%")
+
+# Calculate delta score compared to baseline
+baseline_metrics_for_delta = {
+    'target_digit_acc': DEFAULT_BASELINE_METRICS['target_digit_acc'],
+    'other_digit_acc': DEFAULT_BASELINE_METRICS['other_digit_acc'],
+    'target_subset_acc': DEFAULT_BASELINE_METRICS['target_subset_acc'],
+    'test_digit_acc': DEFAULT_BASELINE_METRICS['test_digit_acc']
+}
+
+final_metrics_for_delta = {
+    'target_digit_acc': final_metrics['target_digit_acc'],
+    'other_digit_acc': final_metrics['other_digit_acc'],
+    'target_subset_acc': final_metrics['target_subset_acc'],
+    'test_digit_acc': final_metrics['test_digit_acc']
+}
+
+delta_score = calculate_baseline_delta_score(final_metrics_for_delta, baseline_metrics_for_delta)
+
+print("\n--- Baseline Comparison ---")
+print("Final metrics vs baseline:")
+print(f"Target Digit Accuracy: {final_metrics['target_digit_acc']:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_digit_acc']:.4f})")
+print(f"Other Digit Accuracy: {final_metrics['other_digit_acc']:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_digit_acc']:.4f})")
+print(f"Target Subset Accuracy: {final_metrics['target_subset_acc']:.4f} (baseline: {DEFAULT_BASELINE_METRICS['target_subset_acc']:.4f})")
+print(f"Other Subset Accuracy: {final_metrics['other_subset_acc']:.4f} (baseline: {DEFAULT_BASELINE_METRICS['other_subset_acc']:.4f})")
+print(f"Test Digit Accuracy: {final_metrics['test_digit_acc']:.4f} (baseline: {DEFAULT_BASELINE_METRICS['test_digit_acc']:.4f})")
+
+print(f"\nDelta Score (distance to baseline): {delta_score:.4f}")
+print("(Lower delta score = closer to baseline performance)")
+
+print("\nComplete pipeline finished: SSD hyperparameter optimization → SSD unlearning → 10 epochs finetuning → comprehensive evaluation")
