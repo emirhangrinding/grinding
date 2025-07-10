@@ -24,7 +24,8 @@ def run_ssd_hyperparameter_optimization(
     n_trials: int = 25,
     data_root: str = "./data",
     head_size: str = "big",
-    seed: int = SEED_DEFAULT
+    seed: int = SEED_DEFAULT,
+    calculate_fisher_on: str = "subset"
 ):
     """
     Complete pipeline to run SSD hyperparameter optimization.
@@ -39,6 +40,7 @@ def run_ssd_hyperparameter_optimization(
         data_root: Root directory for datasets
         head_size: Size of classification heads ("big" or "small")
         seed: Random seed for reproducibility
+        calculate_fisher_on: Calculate Fisher info on "digit" or "subset" task ("subset" default)
     """
     
     print("=== SSD Hyperparameter Optimization ===")
@@ -161,7 +163,8 @@ def run_ssd_hyperparameter_optimization(
         device=device,
         target_subset_id=target_subset_id,
         n_trials=n_trials,
-        seed=seed
+        seed=seed,
+        calculate_fisher_on=calculate_fisher_on
     )
     
     # === 6. Summary ===
@@ -181,11 +184,12 @@ if __name__ == "__main__":
     DATASET_NAME = "CIFAR10"                          # "CIFAR10" or "MNIST"
     TARGET_SUBSET_ID = 0                              # Which client to "forget" (0-based)
     NUM_CLIENTS = 10                                  # Number of clients/subsets
-    BATCH_SIZE = 64                                   # Batch size
+    BATCH_SIZE = 128                                  # Batch size
     N_TRIALS = 25                                     # Number of optimization trials
     DATA_ROOT = "./data"                              # Data directory
     HEAD_SIZE = "big"                                 # "big" or "small"
     SEED = 42                                         # Random seed
+    CALCULATE_FISHER_ON = "subset"                    # "digit" or "subset" Fisher info
     
     # Validate configuration
     if MODEL_PATH == "path_to_your_pretrained_model.pth":
@@ -203,5 +207,6 @@ if __name__ == "__main__":
         n_trials=N_TRIALS,
         data_root=DATA_ROOT,
         head_size=HEAD_SIZE,
-        seed=SEED
+        seed=SEED,
+        calculate_fisher_on=CALCULATE_FISHER_ON
     ) 
