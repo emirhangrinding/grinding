@@ -17,6 +17,7 @@ from evaluation import (
     calculate_overall_digit_classification_accuracy,
     get_membership_attack_prob_train_only
 )
+from tuning import optimise_ssd_hyperparams
 
 # --- Configuration ---
 MODEL_PATH = "/kaggle/input/latest-medium/pytorch/default/1/model_medium.h5" 
@@ -29,11 +30,13 @@ HEAD_SIZE = "medium"
 SEED = 42
 
 # SSD Hyperparameters from user
+# Set to None to trigger hyperparameter tuning before unlearning.
 # alpha is the exponent, lambda is the dampening constant.
 # selection_weighting was 1.0 during tuning.
-SSD_EXPONENT = 0.178419  # This was 'alpha' in tuning
-SSD_DAMPENING = 2.610056 # This was 'lambda' in tuning
+SSD_EXPONENT = None  # Example value: 0.178419
+SSD_DAMPENING = None # Example value: 2.610056
 SSD_SELECTION_WEIGHTING = 1.0
+N_TRIALS_TUNING = 100 # Number of trials for hyperparameter tuning if SSD_EXPONENT or SSD_DAMPENING are None
 
 # Finetuning Hyperparameters
 FT_LR = 1e-4  # A common learning rate for fine-tuning
@@ -105,6 +108,29 @@ def main():
     pretrained_model.to(device)
     pretrained_model.eval()
 
+    # --- Hyperparameter Tuning (if needed) ---
+    ssd_exponent = SSD_EXPONENT
+    ssd_dampening = SSD_DAMPENING
+
+    if ssd_exponent is None or ssd_dampening is None:
+        print("\n--- SSD hyperparameters not provided. Running tuning... ---")
+        study = optimise_ssd_hyperparams(
+            pretrained_model=pretrained_model,
+            retain_loader=retain_loader,
+            forget_loader=forget_loader,
+            test_loader=test_loader,
+            device=device,
+            target_subset_id=TARGET_SUBSET_ID,
+            n_trials=N_TRIALS_TUNING,
+            seed=SEED
+        )
+        ssd_exponent = study.best_params['alpha']
+        ssd_dampening = study.best_params['lambda']
+        print(f"--- Tuning finished. Using best params: alpha={ssd_exponent:.6f}, lambda={ssd_dampening:.6f} ---")
+    else:
+        print(f"\n--- Using provided SSD hyperparameters: alpha={ssd_exponent:.6f}, lambda={ssd_dampening:.6f} ---")
+
+
     # --- 1. Apply SSD Unlearning ---
     # The ssd_unlearn_subset function from ssd.py will be used here.
     # It returns the unlearned model and initial metrics.
@@ -114,8 +140,8 @@ def main():
         forget_loader=forget_loader,
         target_subset_id=TARGET_SUBSET_ID,
         device=device,
-        exponent=SSD_EXPONENT,
-        dampening_constant=SSD_DAMPENING,
+        exponent=ssd_exponent,
+        dampening_constant=ssd_dampening,
         selection_weighting=SSD_SELECTION_WEIGHTING,
         test_loader=test_loader,
         calculate_fisher_on="subset"
