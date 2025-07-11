@@ -121,6 +121,28 @@ def main():
         calculate_fisher_on="subset"
     )
 
+    # Create a temporary combined loader for evaluation on train data
+    # to be consistent with deepclean.py evaluation style.
+    combined_dataset = ConcatDataset([retain_loader.dataset, forget_loader.dataset])
+    eval_loader = DataLoader(combined_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+    # --- Metrics after SSD, before fine-tuning ---
+    print("\n--- Calculating metrics after SSD, before fine-tuning ---")
+    unlearned_model.eval()
+
+    target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+    target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+    test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
+    mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
+
+    print(f"Digit accuracy on target subset after SSD: {target_digit_acc:.4f}")
+    print(f"Digit accuracy on other subsets after SSD: {other_digit_acc:.4f}")
+    print(f"Subset ID accuracy on target subset after SSD: {target_subset_acc:.4f}")
+    print(f"Subset ID accuracy on other subsets after SSD: {other_subset_acc:.4f}")
+    print(f"[TEST] Digit accuracy after SSD: {test_digit_acc:.4f}")
+    print(f"Train-only MIA Score on forget set after SSD: {mia_score:.4f}")
+
+
     # --- 2. Fine-tune the subset head ---
     print("\n--- Starting fine-tuning of the subset head ---")
     
@@ -163,27 +185,23 @@ def main():
             epoch_loss = running_loss / len(retain_loader.dataset)
             print(f"Fine-tuning Epoch {epoch+1}/{FT_EPOCHS}, Loss on Retain Set: {epoch_loss:.4f}")
 
-    # --- 3. Final Evaluation ---
-    print("\n--- Calculating final metrics after fine-tuning ---")
-    unlearned_model.eval()
+            # --- Evaluation after epoch ---
+            print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{FT_EPOCHS} ---")
+            unlearned_model.eval()
 
-    # Create a temporary combined loader for evaluation on train data
-    # to be consistent with deepclean.py evaluation style.
-    combined_dataset = ConcatDataset([retain_loader.dataset, forget_loader.dataset])
-    eval_loader = DataLoader(combined_dataset, batch_size=BATCH_SIZE, shuffle=False)
+            target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+            target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+            test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
+            mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
 
-    # Calculate final metrics
-    target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
-    target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
-    test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
-    mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
+            print(f"Digit accuracy on target subset after SSD: {target_digit_acc:.4f}")
+            print(f"Digit accuracy on other subsets after SSD: {other_digit_acc:.4f}")
+            print(f"Subset ID accuracy on target subset after SSD: {target_subset_acc:.4f}")
+            print(f"Subset ID accuracy on other subsets after SSD: {other_subset_acc:.4f}")
+            print(f"[TEST] Digit accuracy after SSD: {test_digit_acc:.4f}")
+            print(f"Train-only MIA Score on forget set after SSD: {mia_score:.4f}")
 
-    print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
-    print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
-    print(f"Subset ID accuracy on target subset: {target_subset_acc:.4f}")
-    print(f"Subset ID accuracy on other subsets: {other_subset_acc:.4f}")
-    print(f"[TEST] Overall digit accuracy: {test_digit_acc:.4f}")
-    print(f"Train-only MIA Score on forget set: {mia_score:.4f}")
+
     print("\n--- Finetuning Script Finished ---")
 
 
