@@ -37,7 +37,8 @@ mtl_dataset = MultiTaskDataset(full_dataset, clients_data)
 dataset_size = len(mtl_dataset)
 train_size = int(0.8 * dataset_size)
 indices = list(range(dataset_size))
-random.shuffle(indices)
+# Note: Shuffling is removed to be consistent with finetune_after_ssd.py
+# random.shuffle(indices)
 train_indices = indices[:train_size]
 
 train_dataset = Subset(mtl_dataset, train_indices)
