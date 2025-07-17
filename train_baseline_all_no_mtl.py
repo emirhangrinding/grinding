@@ -20,7 +20,7 @@ def learn_baseline_all_clients(
     num_clients: int = 10,
     target_client_id: int = 0,
     batch_size: int = 128,
-    num_epochs: int = 10,
+    num_epochs: int = 200,
     data_root: str = "./data",
     path: str = "baseline_all_clients_model.h5",
     model_class=StandardResNet,

@@ -20,7 +20,7 @@ def learn_baseline_no_mtl(
     num_clients: int = 10,
     excluded_client_id: int = 0,
     batch_size: int = 64,
-    num_epochs: int = 10,
+    num_epochs: int = 200,
     data_root: str = "./data",
     path: str = "baseline_no_mtl_model.h5",
     model_class=StandardResNet,
