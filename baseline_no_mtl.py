@@ -5,7 +5,7 @@ from torchvision.datasets import MNIST, CIFAR10
 
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, transform_mnist, transform_test_cifar
-from training import train_single_head
+from training import train_single_head, train_single_head_with_eval
 from models import StandardResNet
 from evaluation import (
     calculate_overall_digit_classification_accuracy,
@@ -86,13 +86,22 @@ def learn_baseline_no_mtl(
     # Model & training
     model = model_class(dataset_name=dataset_name)
 
+    # Create target subset loader for evaluation during training
+    target_subset_dataset = Subset(full_dataset, clients_data[excluded_key])
+    target_subset_loader = DataLoader(target_subset_dataset, batch_size=batch_size)
+    
+    # Create training evaluation loader (for the included clients)
+    training_eval_loader = DataLoader(train_dataset, batch_size=batch_size)
+
     print(
         f"\n[BASELINE] Training on {num_clients-1} clients (excluding client {excluded_client_id})"
     )
-    model, history = train_single_head(
+    model, history = train_single_head_with_eval(
         model=model,
         train_loader=train_loader,
         test_loader=test_loader,
+        training_eval_loader=training_eval_loader,
+        target_subset_loader=target_subset_loader,
         device=device,
         num_epochs=num_epochs,
         dataset_name=dataset_name,
@@ -102,14 +111,7 @@ def learn_baseline_no_mtl(
     torch.save(model.state_dict(), path)
     print(f"[BASELINE] Model weights saved to {path}\n")
 
-    # Evaluation loaders
-    # 1) Training data loader (contains only the samples actually seen during optimisation)
-    #    Validation samples are excluded to ensure metrics are computed strictly on the training set.
-    training_eval_loader = DataLoader(train_dataset, batch_size=batch_size)
-    
-    # 2) Target subset loader (contains only the excluded client)
-    target_subset_dataset = Subset(full_dataset, clients_data[excluded_key])
-    target_subset_loader = DataLoader(target_subset_dataset, batch_size=batch_size)
+    # Evaluation loaders were already created for training evaluation above
 
     # Metrics
     # Calculate accuracy on the training data (9 clients, excluding target)

@@ -71,9 +71,22 @@ def calculate_overall_digit_classification_accuracy(model, data_loader, device):
     model.eval()
     correct, total = 0, 0
     with torch.no_grad():
-        for inputs, digit_labels, _ in data_loader:
-            inputs, digit_labels = inputs.to(device), digit_labels.to(device)
-            digit_logits, _, _ = model(inputs)
+        for batch in data_loader:
+            # Handle both 2-value and 3-value batch formats
+            if len(batch) == 2:
+                inputs, digit_labels = batch
+                inputs, digit_labels = inputs.to(device), digit_labels.to(device)
+            else:
+                inputs, digit_labels, _ = batch
+                inputs, digit_labels = inputs.to(device), digit_labels.to(device)
+            
+            # Handle both single-head and multi-head model outputs
+            outputs = model(inputs)
+            if isinstance(outputs, tuple):
+                digit_logits = outputs[0]  # Multi-head model
+            else:
+                digit_logits = outputs  # Single-head model
+            
             _, digit_preds = torch.max(digit_logits, 1)
             correct += (digit_preds == digit_labels).sum().item()
             total += digit_labels.size(0)

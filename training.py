@@ -231,6 +231,90 @@ def train_single_head(
 
     return model, history
 
+
+def train_single_head_with_eval(
+    model,
+    train_loader,
+    test_loader,
+    training_eval_loader,
+    target_subset_loader,
+    device,
+    num_epochs,
+    dataset_name,
+    target_test_accuracy=None,
+):
+    """Train a single-head model for standard classification with epoch-by-epoch evaluation."""
+    from evaluation import calculate_overall_digit_classification_accuracy
+
+    model.to(device)
+
+    # Dataset-specific optimizer configuration (matching MTL setup)
+    if dataset_name == 'MNIST':
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        scheduler = None
+    else:  # CIFAR10
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[25, 50, 100, 150], gamma=0.1)
+
+    criterion = torch.nn.CrossEntropyLoss()
+    history = {"train_loss": [], "test_acc": [], "train_acc": [], "target_acc": []}
+
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        epoch_loss = running_loss / len(train_loader)
+        history["train_loss"].append(epoch_loss)
+
+        # Step the scheduler if it exists
+        if scheduler is not None:
+            scheduler.step()
+
+        # Evaluate on test set
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+        test_acc = 100 * correct / total
+        history["test_acc"].append(test_acc)
+        
+        # Evaluate on training set (included clients)
+        train_acc = calculate_overall_digit_classification_accuracy(model, training_eval_loader, device) * 100
+        history["train_acc"].append(train_acc)
+        
+        # Evaluate on target subset (excluded client)
+        target_acc = calculate_overall_digit_classification_accuracy(model, target_subset_loader, device) * 100
+        history["target_acc"].append(target_acc)
+
+        print(
+            f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, "
+            f"Test Acc: {test_acc:.2f}%, Train Acc: {train_acc:.2f}%, Target Acc: {target_acc:.2f}%"
+        )
+
+        if target_test_accuracy is not None and test_acc >= target_test_accuracy:
+            print(
+                f"Target test accuracy of {target_test_accuracy}% reached. Stopping training."
+            )
+            break
+
+    return model, history
+
 def learn(dataset_name='MNIST', setting='non-iid', num_clients=10,
           batch_size=64, num_epochs=10, lambda_1=1.0, lambda_2=1.0, lambda_dis=0.1,
           lambda_pull=1.0, lambda_push=1.0, data_root='./data',
