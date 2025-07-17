@@ -16,6 +16,7 @@ from deepclean import deepclean_unlearn_subset
 from ssd import ssd_unlearn_subset
 from retain_no_reset import retain_no_reset_unlearn_subset
 from baseline import learn_baseline_excluding_client
+from baseline_no_mtl import learn_baseline_no_mtl
 from tuning import optimise_ssd_hyperparams
 from visualization import visualize_mtl_two_heads_results
 from evaluation import get_membership_attack_prob_train_only
@@ -299,6 +300,8 @@ def _build_cli_parser():
     baseline_parser.add_argument("--head_size", default="big", choices=["big", "medium", "small"], help="Size of the classification heads")
     baseline_parser.add_argument("--model_path", default="baseline_model.h5", help="Path to save trained model weights")
     baseline_parser.add_argument("--seed", type=int, default=SEED_DEFAULT, help="Random seed for reproducibility")
+    baseline_parser.add_argument("--baseline_type", type=str, default="mtl", choices=["mtl", "no_mtl"], help="Type of baseline to run")
+    baseline_parser.add_argument("--target_test_accuracy", type=float, default=None, help="Target test accuracy to stop training")
 
     # Tune-SSD sub-command
     tune_parser = subparsers.add_parser("tune_ssd", help="Hyper-parameter tuning for SSD via Optuna")
@@ -377,23 +380,37 @@ def main():
 
     elif args.command == "baseline":
         # Baseline Training
-        model, history, metrics = learn_baseline_excluding_client(
-            dataset_name=args.dataset,
-            setting=args.setting,
-            num_clients=args.num_clients,
-            excluded_client_id=args.excluded_client_id,
-            batch_size=args.batch_size,
-            num_epochs=args.num_epochs,
-            lambda_1=args.lambda_1,
-            lambda_2=args.lambda_2,
-            lambda_dis=args.lambda_dis,
-            lambda_pull=args.lambda_pull,
-            lambda_push=args.lambda_push,
-            data_root=args.data_root,
-            path=args.model_path,
-            seed=args.seed,
-            head_size=args.head_size,
-        )
+        if args.baseline_type == "mtl":
+            model, history, metrics = learn_baseline_excluding_client(
+                dataset_name=args.dataset,
+                setting=args.setting,
+                num_clients=args.num_clients,
+                excluded_client_id=args.excluded_client_id,
+                batch_size=args.batch_size,
+                num_epochs=args.num_epochs,
+                lambda_1=args.lambda_1,
+                lambda_2=args.lambda_2,
+                lambda_dis=args.lambda_dis,
+                lambda_pull=args.lambda_pull,
+                lambda_push=args.lambda_push,
+                data_root=args.data_root,
+                path=args.model_path,
+                seed=args.seed,
+                head_size=args.head_size,
+            )
+        else:
+            model, history, metrics = learn_baseline_no_mtl(
+                dataset_name=args.dataset,
+                setting=args.setting,
+                num_clients=args.num_clients,
+                excluded_client_id=args.excluded_client_id,
+                batch_size=args.batch_size,
+                num_epochs=args.num_epochs,
+                data_root=args.data_root,
+                path=args.model_path,
+                seed=args.seed,
+                target_test_accuracy=args.target_test_accuracy,
+            )
 
         print("\nBaseline Training Results:")
         print(f"Final metrics: {metrics}")

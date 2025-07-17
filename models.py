@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as models
 
 # Updated ResNet-18 implementation
 
@@ -83,6 +84,30 @@ class ResNet(nn.Module):
 def resnet18():
     """Return a ResNet-18 model (updated version)."""
     return ResNet(BasicBlock, [2, 2, 2, 2])
+
+class StandardResNet(nn.Module):
+    """Standard ResNet model for single-head classification from torchvision."""
+
+    def __init__(self, dataset_name="CIFAR10", pretrained=False):
+        super(StandardResNet, self).__init__()
+        self.resnet = models.resnet18(pretrained=pretrained)
+
+        if dataset_name == "MNIST":
+            # Adapt for 1-channel grayscale images
+            self.resnet.conv1 = nn.Conv2d(
+                1, 64, kernel_size=7, stride=2, padding=3, bias=False
+            )
+            num_classes = 10
+        elif dataset_name == "CIFAR10":
+            num_classes = 10
+        else:
+            raise ValueError(f"Unsupported dataset: {dataset_name}")
+
+        num_ftrs = self.resnet.fc.in_features
+        self.resnet.fc = nn.Linear(num_ftrs, num_classes)
+
+    def forward(self, x):
+        return self.resnet(x)
 
 # Multi-task model definition (uses the above ResNet as encoder)
 
