@@ -74,10 +74,8 @@ def learn_baseline_no_mtl(
     val_indices = indices[train_size:]
 
     train_dataset = Subset(included_dataset, train_indices)
-    val_dataset = Subset(included_dataset, val_indices)
-
+    
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    eval_loader = DataLoader(val_dataset, batch_size=batch_size)
     
     if dataset_name == "MNIST":
         test_base = MNIST(root=data_root, train=False, download=True, transform=transform_mnist)

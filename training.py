@@ -172,7 +172,15 @@ def train_single_head(
     """Train a single-head model for standard classification."""
 
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    # Dataset-specific optimizer configuration (matching MTL setup)
+    if dataset_name == 'MNIST':
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        scheduler = None
+    else:  # CIFAR10
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], gamma=0.1)
+
     criterion = torch.nn.CrossEntropyLoss()
     history = {"train_loss": [], "test_acc": []}
 
@@ -191,6 +199,10 @@ def train_single_head(
 
         epoch_loss = running_loss / len(train_loader)
         history["train_loss"].append(epoch_loss)
+
+        # Step the scheduler if it exists
+        if scheduler is not None:
+            scheduler.step()
 
         # Evaluate on test set
         model.eval()
