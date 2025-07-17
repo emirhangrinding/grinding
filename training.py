@@ -173,16 +173,21 @@ def train_single_head(
 
     model.to(device)
 
-    # Dataset-specific optimizer configuration (matching MTL setup)
+    # Dataset-specific optimizer configuration (optimized for baseline training)
     if dataset_name == 'MNIST':
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        scheduler = None
+        # Simple step scheduler for MNIST - reduces LR every 10 epochs
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
     else:  # CIFAR10
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[25, 50, 100, 150], gamma=0.1)
+        # CosineAnnealingLR is more suitable for baseline CIFAR10 training
+        # T_max should match the expected number of epochs
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
 
     criterion = torch.nn.CrossEntropyLoss()
     history = {"train_loss": [], "test_acc": []}
+
+    print(f"[INFO] Using scheduler: {type(scheduler).__name__} for {dataset_name}")
 
     for epoch in range(num_epochs):
         model.train()
@@ -248,16 +253,21 @@ def train_single_head_with_eval(
 
     model.to(device)
 
-    # Dataset-specific optimizer configuration (matching MTL setup)
+    # Dataset-specific optimizer configuration (optimized for baseline training)
     if dataset_name == 'MNIST':
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        scheduler = None
+        # Simple step scheduler for MNIST - reduces LR every 10 epochs
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
     else:  # CIFAR10
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[25, 50, 100, 150], gamma=0.1)
+        # CosineAnnealingLR is more suitable for baseline CIFAR10 training
+        # T_max should match the expected number of epochs
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
 
     criterion = torch.nn.CrossEntropyLoss()
     history = {"train_loss": [], "test_acc": [], "train_acc": [], "target_acc": []}
+
+    print(f"[INFO] Using scheduler: {type(scheduler).__name__} for {dataset_name}")
 
     for epoch in range(num_epochs):
         model.train()
