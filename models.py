@@ -99,6 +99,10 @@ class StandardResNet(nn.Module):
             )
             num_classes = 10
         elif dataset_name == "CIFAR10":
+            # Use CIFAR-appropriate conv1 layer (smaller kernel, no stride)
+            self.resnet.conv1 = nn.Conv2d(
+                3, 64, kernel_size=3, stride=1, padding=1, bias=False
+            )
             num_classes = 10
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
