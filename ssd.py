@@ -152,7 +152,17 @@ def ssd_unlearn_subset(
     print("\nCalculating accuracies after dampening…")
 
     # Combine retain and forget datasets for a single pass evaluation
-    combined_dataset = [(x, y_dig, y_sub) for loader in (retain_loader, forget_loader) for x, y_dig, y_sub in loader.dataset]
+    combined_dataset = []
+    for loader in (retain_loader, forget_loader):
+        for item in loader.dataset:
+            if len(item) == 3:
+                # MultiTaskDataset format
+                x, y_dig, y_sub = item
+                combined_dataset.append((x, y_dig, y_sub))
+            else:
+                # Standard dataset format - use dummy subset label
+                x, y_dig = item
+                combined_dataset.append((x, y_dig, 0))  # Use 0 as dummy subset label
 
     class _TempDataset(torch.utils.data.Dataset):
         def __init__(self, data_list):

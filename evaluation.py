@@ -97,19 +97,37 @@ def _get_model_outputs(loader, model, device):
     model.eval()
     outputs = []
     with torch.no_grad():
-        for inputs, _digit_labels, _subset_labels in loader:
+        for batch in loader:
+            # Handle both 2-value and 3-value unpacking from data loaders
+            if len(batch) == 3:
+                inputs, _digit_labels, _subset_labels = batch
+            else:  # len(batch) == 2
+                inputs, _digit_labels = batch
+            
             inputs = inputs.to(device)
-            digit_logits, subset_logits, _ = model(inputs)
-
-            digit_probs = torch.softmax(digit_logits, dim=1)
-            subset_probs = torch.softmax(subset_logits, dim=1)
-            probs = torch.cat((digit_probs, subset_probs), dim=1)
+            model_outputs = model(inputs)
+            
+            # Handle both MTL models (3 outputs) and standard models (1 output)
+            if isinstance(model_outputs, tuple) and len(model_outputs) == 3:
+                # MTL model with two heads
+                digit_logits, subset_logits, _ = model_outputs
+                digit_probs = torch.softmax(digit_logits, dim=1)
+                subset_probs = torch.softmax(subset_logits, dim=1)
+                probs = torch.cat((digit_probs, subset_probs), dim=1)
+            else:
+                # Standard model with single head
+                digit_logits = model_outputs
+                digit_probs = torch.softmax(digit_logits, dim=1)
+                # For compatibility with MTL evaluation, we'll create dummy subset probs
+                # This is only used for MIA attacks which focus on the output distribution
+                dummy_subset_probs = torch.zeros(digit_probs.size(0), 1, device=digit_probs.device)
+                probs = torch.cat((digit_probs, dummy_subset_probs), dim=1)
+            
             outputs.append(probs.cpu().numpy())
 
     if not outputs:
         return np.array([])
-
-    return np.concatenate(outputs)
+    return np.concatenate(outputs, axis=0)
 
 def get_membership_attack_prob_train_only(retain_loader, forget_loader, model):
     """Compute train-only Membership Inference Attack (MIA) *accuracy*.
