@@ -9,7 +9,7 @@ from models import StandardResNet
 from tuning import optimise_ssd_hyperparams
 
 # Configuration - EDIT THESE VALUES
-MODEL_PATH = "train_baseline_all_no_mtl_model.h5"  # From train_baseline_all_no_mtl.py
+MODEL_PATH = "baseline_all_clients_model.h5"  # From train_baseline_all_no_mtl.py
 DATASET_NAME = "CIFAR10"
 TARGET_SUBSET_ID = 0
 NUM_CLIENTS = 10

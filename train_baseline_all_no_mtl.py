@@ -138,3 +138,9 @@ def learn_baseline_all_clients(
         "test_digit_acc": test_digit_acc,
         "mia_score": mia_score,
     } 
+
+
+if __name__ == "__main__":
+    # Run the training with default parameters
+    model, history, metrics = learn_baseline_all_clients()
+    print(f"\nTraining completed. Final metrics: {metrics}") 
