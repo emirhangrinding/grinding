@@ -42,6 +42,17 @@ def calculate_digit_classification_accuracy(model, data_loader, device, target_s
             target_mask = (subset_labels == target_subset_id)
             other_mask = ~target_mask
 
+            # Ensure masks are tensors, not scalars
+            if not isinstance(target_mask, torch.Tensor):
+                # This shouldn't happen, but let's handle it just in case
+                print(f"Warning: target_mask is not a tensor: {type(target_mask)}, subset_labels shape: {subset_labels.shape}, target_subset_id: {target_subset_id}")
+                target_mask = torch.tensor([target_mask], device=subset_labels.device).expand_as(subset_labels)
+                other_mask = ~target_mask
+            elif target_mask.numel() == 1 and subset_labels.numel() > 1:
+                # Handle case where comparison results in scalar for vector input
+                target_mask = target_mask.expand_as(subset_labels)
+                other_mask = ~target_mask
+
             target_correct += (digit_preds[target_mask] == digit_labels[target_mask]).sum().item()
             other_correct += (digit_preds[other_mask] == digit_labels[other_mask]).sum().item()
 
@@ -90,6 +101,16 @@ def calculate_subset_identification_accuracy(model, data_loader, device, target_
 
             target_mask = (subset_labels == target_subset_id)
             other_mask = ~target_mask
+
+            # Ensure masks are tensors, not scalars
+            if not isinstance(target_mask, torch.Tensor):
+                print(f"Warning: target_mask is not a tensor: {type(target_mask)}, subset_labels shape: {subset_labels.shape}, target_subset_id: {target_subset_id}")
+                target_mask = torch.tensor([target_mask], device=subset_labels.device).expand_as(subset_labels)
+                other_mask = ~target_mask
+            elif target_mask.numel() == 1 and subset_labels.numel() > 1:
+                # Handle case where comparison results in scalar for vector input
+                target_mask = target_mask.expand_as(subset_labels)
+                other_mask = ~target_mask
 
             target_correct += (subset_preds[target_mask] == subset_labels[target_mask]).sum().item()
             other_correct += (subset_preds[other_mask] == subset_labels[other_mask]).sum().item()

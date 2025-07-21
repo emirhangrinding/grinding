@@ -36,23 +36,48 @@ def calculate_fim_diagonal(model, dataloader, device, calculate_fisher_on="subse
     criterion = nn.CrossEntropyLoss()
 
     # SSD-style FIM: one backward pass per batch
-    for inputs, digit_labels, subset_labels in dataloader:
+    for batch in dataloader:
+        # Handle both MTL (3 values) and no-MTL (2 values) data formats
+        if len(batch) == 3:
+            inputs, digit_labels, subset_labels = batch
+            is_mtl = True
+        else:  # len(batch) == 2
+            inputs, digit_labels = batch
+            subset_labels = None
+            is_mtl = False
+            
         inputs = inputs.to(device)
         
-        # Choose the appropriate labels and logits based on task
+        # Choose the appropriate labels based on task
         if calculate_fisher_on == "digit":
             labels = digit_labels.to(device)
         else:  # calculate_fisher_on == "subset"
-            labels = subset_labels.to(device)
+            if not is_mtl:
+                # For no-MTL case, fallback to digit task since subset task doesn't exist
+                print(f"Warning: subset task not available in no-MTL case, using digit task instead")
+                labels = digit_labels.to(device)
+                calculate_fisher_on_current = "digit"  # Override for this batch
+            else:
+                labels = subset_labels.to(device)
+                calculate_fisher_on_current = "subset"
 
         # Forward + backward pass for the whole batch
         model.zero_grad()
-        digit_logits, subset_logits, _ = model(inputs)
+        
+        # Handle both single-head and multi-head model outputs
+        model_outputs = model(inputs)
+        if isinstance(model_outputs, tuple):
+            # Multi-head model (MTL case)
+            digit_logits, subset_logits, _ = model_outputs
+        else:
+            # Single-head model (no-MTL case)
+            digit_logits = model_outputs
+            subset_logits = None
         
         # Choose the appropriate logits based on task
-        if calculate_fisher_on == "digit":
+        if calculate_fisher_on == "digit" or (not is_mtl and calculate_fisher_on == "subset"):
             loss = criterion(digit_logits, labels)
-        else:  # calculate_fisher_on == "subset"
+        else:  # calculate_fisher_on == "subset" and is_mtl
             loss = criterion(subset_logits, labels)
         
         loss.backward()
@@ -401,12 +426,35 @@ def dissolve_unlearn_subset(
             running_loss_ft = 0.0
             total_samples_ft = 0
 
-            for inputs, digit_labels, subset_labels in retain_loader:
+            for batch in retain_loader:
+                # Handle both MTL (3 values) and no-MTL (2 values) data formats
+                if len(batch) == 3:
+                    inputs, digit_labels, subset_labels = batch
+                    is_mtl = True
+                else:  # len(batch) == 2
+                    inputs, digit_labels = batch
+                    subset_labels = torch.zeros_like(digit_labels)  # Dummy subset labels
+                    is_mtl = False
+                    
                 inputs = inputs.to(device)
                 digit_labels = digit_labels.to(device)
                 subset_labels = subset_labels.to(device)
                 optimizer_ft.zero_grad()
-                digit_logits, subset_logits, features = unlearned_model(inputs, return_features=True)
+                
+                # Handle both single-head and multi-head model outputs
+                model_outputs = unlearned_model(inputs, return_features=True) if hasattr(unlearned_model, 'return_features') else unlearned_model(inputs)
+                if isinstance(model_outputs, tuple) and len(model_outputs) == 3:
+                    # Multi-head model (MTL case)
+                    digit_logits, subset_logits, features = model_outputs
+                else:
+                    # Single-head model (no-MTL case) or different output format
+                    if isinstance(model_outputs, tuple):
+                        digit_logits = model_outputs[0]
+                        features = model_outputs[1] if len(model_outputs) > 1 else None
+                    else:
+                        digit_logits = model_outputs
+                        features = None
+                    subset_logits = None
                 
                 # Calculate main task loss with epoch-based subset loss logic
                 if finetune_use_disentanglement_loss and use_subset_losses_epoch > 0 and epoch < use_subset_losses_epoch:
@@ -415,11 +463,21 @@ def dissolve_unlearn_subset(
                 else:
                     # Original logic for all epochs when condition not met
                     if finetune_task == "subset":
-                        loss = criterion_ft(subset_logits, subset_labels)  # Fine-tuning based on subset classification
+                        if subset_logits is not None:
+                            loss = criterion_ft(subset_logits, subset_labels)  # Fine-tuning based on subset classification
+                        else:
+                            # Fallback to digit task for no-MTL case
+                            print("Warning: subset task not available in no-MTL case, using digit task for fine-tuning")
+                            loss = criterion_ft(digit_logits, digit_labels)
                     elif finetune_task == "digit":
                         loss = criterion_ft(digit_logits, digit_labels)    # Fine-tuning based on digit classification
                     elif finetune_task == "both":
-                        loss = criterion_ft(digit_logits, digit_labels) + criterion_ft(subset_logits, subset_labels)  # Both losses
+                        if subset_logits is not None:
+                            loss = criterion_ft(digit_logits, digit_labels) + criterion_ft(subset_logits, subset_labels)  # Both losses
+                        else:
+                            # Fallback to digit only for no-MTL case
+                            print("Warning: subset task not available in no-MTL case, using digit task only for fine-tuning")
+                            loss = criterion_ft(digit_logits, digit_labels)
                     else:
                         raise ValueError(f"finetune_task must be 'subset', 'digit', or 'both', got {finetune_task}")
                 
