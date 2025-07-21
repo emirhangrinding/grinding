@@ -110,10 +110,10 @@ def learn_baseline_all_clients(
 
     # Metrics
     # The evaluation loaders were already created for training evaluation.
-    # We will use the full training set for evaluation here.
-    full_train_loader = DataLoader(full_train_dataset, batch_size=batch_size)
+    # We will use the training set that was actually used for training, not the full dataset
+    # to be consistent with the epoch-by-epoch evaluation
     
-    train_digit_acc = calculate_overall_digit_classification_accuracy(model, full_train_loader, device)
+    train_digit_acc = calculate_overall_digit_classification_accuracy(model, training_eval_loader, device)
 
     # Digit accuracy on target subset only
     target_digit_acc = calculate_overall_digit_classification_accuracy(model, target_subset_loader, device)
@@ -123,18 +123,18 @@ def learn_baseline_all_clients(
     # Print summary
     print("[BASELINE] ---------------------------------------------")
     print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
-    print(f"Digit accuracy on all other subsets (train): {train_digit_acc:.4f}")
+    print(f"Digit accuracy on training data (80% subset): {train_digit_acc:.4f}")
     print(f"Digit accuracy on test set: {test_digit_acc:.4f}")
 
-    # MIA (train-only)
-    mia_score = get_membership_attack_prob_train_only(full_train_loader, target_subset_loader, model)
-    print(f"Train-only MIA Accuracy (target subset vs all train): {mia_score:.2f}%")
+    # MIA (train-only) - Use the training eval loader instead of full train loader
+    mia_score = get_membership_attack_prob_train_only(training_eval_loader, target_subset_loader, model)
+    print(f"Train-only MIA Accuracy (target subset vs training data): {mia_score:.2f}%")
 
     print("[BASELINE] ---------------------------------------------\n")
 
     return model, history, {
         "train_digit_tgt": target_digit_acc,
-        "train_digit_all": train_digit_acc,
+        "train_digit_training": train_digit_acc,  # Changed from "train_digit_all" to be more accurate
         "test_digit_acc": test_digit_acc,
         "mia_score": mia_score,
     } 

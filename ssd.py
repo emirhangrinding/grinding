@@ -52,22 +52,45 @@ class ParameterPerturber:
         if len(dataloader.dataset) == 0:
             return importances
 
-        for inputs, digit_labels, subset_labels in dataloader:
+        for batch in dataloader:
+            # Handle both MTL (3 values) and no-MTL (2 values) data formats
+            if len(batch) == 3:
+                inputs, digit_labels, subset_labels = batch
+                is_mtl = True
+            else:  # len(batch) == 2
+                inputs, digit_labels = batch
+                subset_labels = None
+                is_mtl = False
+                
             inputs = inputs.to(self.device)
             
             # Choose the appropriate labels based on task
             if calculate_fisher_on == "digit":
                 labels = digit_labels.to(self.device)
             else:  # calculate_fisher_on == "subset"
-                labels = subset_labels.to(self.device)
+                if not is_mtl:
+                    # For no-MTL case, fallback to digit task since subset task doesn't exist
+                    print(f"Warning: subset task not available in no-MTL case, using digit task instead")
+                    labels = digit_labels.to(self.device)
+                    calculate_fisher_on_current = "digit"  # Override for this iteration
+                else:
+                    labels = subset_labels.to(self.device)
+                    calculate_fisher_on_current = "subset"
 
-            # forward through the model
-            digit_logits, subset_logits, _ = self.model(inputs)
+            # Forward through the model - handle both single-head and multi-head outputs
+            model_outputs = self.model(inputs)
+            if isinstance(model_outputs, tuple):
+                # Multi-head model (MTL case)
+                digit_logits, subset_logits, _ = model_outputs
+            else:
+                # Single-head model (no-MTL case)
+                digit_logits = model_outputs
+                subset_logits = None
             
             # Choose the appropriate logits based on task
-            if calculate_fisher_on == "digit":
+            if calculate_fisher_on == "digit" or (not is_mtl and calculate_fisher_on == "subset"):
                 loss = criterion(digit_logits, labels)
-            else:  # calculate_fisher_on == "subset"
+            else:  # calculate_fisher_on == "subset" and is_mtl
                 loss = criterion(subset_logits, labels)
 
             # accumulate squared gradients

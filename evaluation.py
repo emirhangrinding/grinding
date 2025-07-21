@@ -15,10 +15,28 @@ def calculate_digit_classification_accuracy(model, data_loader, device, target_s
     other_samples = 0
 
     with torch.no_grad():
-        for inputs, digit_labels, subset_labels in data_loader:
+        for batch in data_loader:
+            # Handle both MTL (3 values) and no-MTL (2 values) data formats
+            if len(batch) == 3:
+                inputs, digit_labels, subset_labels = batch
+                is_mtl = True
+            else:  # len(batch) == 2
+                inputs, digit_labels = batch
+                subset_labels = torch.zeros_like(digit_labels)  # Use dummy subset labels
+                is_mtl = False
+                
             inputs, digit_labels, subset_labels = \
                 inputs.to(device), digit_labels.to(device), subset_labels.to(device)
-            digit_logits, _, _ = model(inputs)
+            
+            # Handle both single-head and multi-head model outputs
+            model_outputs = model(inputs)
+            if isinstance(model_outputs, tuple):
+                # Multi-head model (MTL case)
+                digit_logits, _, _ = model_outputs
+            else:
+                # Single-head model (no-MTL case)
+                digit_logits = model_outputs
+                
             _, digit_preds = torch.max(digit_logits, 1)
 
             target_mask = (subset_labels == target_subset_id)
@@ -46,11 +64,29 @@ def calculate_subset_identification_accuracy(model, data_loader, device, target_
     other_samples = 0
 
     with torch.no_grad():
-        for inputs, digit_labels, subset_labels in data_loader:
+        for batch in data_loader:
+            # Handle both MTL (3 values) and no-MTL (2 values) data formats
+            if len(batch) == 3:
+                inputs, digit_labels, subset_labels = batch
+                is_mtl = True
+            else:  # len(batch) == 2
+                inputs, digit_labels = batch
+                subset_labels = torch.zeros_like(digit_labels)  # Use dummy subset labels
+                is_mtl = False
+                
             inputs, digit_labels, subset_labels = \
                 inputs.to(device), digit_labels.to(device), subset_labels.to(device)
-            _, subset_logits, _ = model(inputs)
-            _, subset_preds = torch.max(subset_logits, 1)
+            
+            # Handle both single-head and multi-head model outputs
+            model_outputs = model(inputs)
+            if isinstance(model_outputs, tuple):
+                # Multi-head model (MTL case)
+                _, subset_logits, _ = model_outputs
+                _, subset_preds = torch.max(subset_logits, 1)
+            else:
+                # Single-head model (no-MTL case) - subset identification not meaningful
+                # Return dummy predictions (all zeros) since there's no subset head
+                subset_preds = torch.zeros_like(subset_labels)
 
             target_mask = (subset_labels == target_subset_id)
             other_mask = ~target_mask
