@@ -70,7 +70,7 @@ class ParameterPerturber:
             else:  # calculate_fisher_on == "subset"
                 if not is_mtl:
                     # For no-MTL case, fallback to digit task since subset task doesn't exist
-                    print(f"Warning: subset task not available in no-MTL case, using digit task instead")
+                    #print(f"Warning: subset task not available in no-MTL case, using digit task instead")
                     labels = digit_labels.to(self.device)
                     calculate_fisher_on_current = "digit"  # Override for this iteration
                 else:
