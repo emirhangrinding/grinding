@@ -348,10 +348,18 @@ def retain_no_reset_unlearn_subset(
     temp_loader = torch.utils.data.DataLoader(temp_dataset, batch_size=retain_loader.batch_size, shuffle=False)
 
     # Calculate accuracies after modifications
-    target_accuracy_after_modifications, other_accuracy_after_modifications = \
-        calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
-    subset_target_acc_after_modifications, subset_other_acc_after_modifications = \
-        calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
+    if target_subset_id is None:
+        # No-MTL case: Evaluate target and retain subsets separately
+        target_accuracy_after_modifications = calculate_overall_digit_classification_accuracy(unlearned_model, forget_loader, device)
+        other_accuracy_after_modifications = calculate_overall_digit_classification_accuracy(unlearned_model, retain_loader, device)
+        subset_target_acc_after_modifications = 0.0  # Not meaningful for no-MTL
+        subset_other_acc_after_modifications = 0.0   # Not meaningful for no-MTL
+    else:
+        # MTL case: Use the original combined evaluation approach
+        target_accuracy_after_modifications, other_accuracy_after_modifications = \
+            calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
+        subset_target_acc_after_modifications, subset_other_acc_after_modifications = \
+            calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
 
     print(f"Accuracy on target subset after weight modifications (before fine-tuning): {target_accuracy_after_modifications:.4f}")
     print(f"Accuracy on other subsets after weight modifications (before fine-tuning): {other_accuracy_after_modifications:.4f}")
@@ -492,10 +500,18 @@ def retain_no_reset_unlearn_subset(
             if temp_loader: # Ensure temp_loader was successfully created
                 unlearned_model.eval() # Set model to evaluation mode for accuracy calculation
                 # Using temp_loader which contains both retain and forget data for a comprehensive evaluation
-                unlearned_target_accuracy, unlearned_other_accuracy = \
-                    calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
-                unlearned_subset_target_acc, unlearned_subset_other_acc = \
-                    calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
+                if target_subset_id is None:
+                    # No-MTL case: Evaluate target and retain subsets separately
+                    unlearned_target_accuracy = calculate_overall_digit_classification_accuracy(unlearned_model, forget_loader, device)
+                    unlearned_other_accuracy = calculate_overall_digit_classification_accuracy(unlearned_model, retain_loader, device)
+                    unlearned_subset_target_acc = 0.0  # Not meaningful for no-MTL
+                    unlearned_subset_other_acc = 0.0   # Not meaningful for no-MTL
+                else:
+                    # MTL case: Use the original combined evaluation approach
+                    unlearned_target_accuracy, unlearned_other_accuracy = \
+                        calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
+                    unlearned_subset_target_acc, unlearned_subset_other_acc = \
+                        calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
                 print(f"  Unlearned accuracy on target subset after finetuning epoch {epoch+1}: {unlearned_target_accuracy:.4f}")
                 print(f"  Unlearned accuracy on other subsets after finetuning epoch {epoch+1}: {unlearned_other_accuracy:.4f}")
                 print(f"  Unlearned subset ID accuracy on target subset after finetuning epoch {epoch+1}: {unlearned_subset_target_acc:.4f}")

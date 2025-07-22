@@ -2,7 +2,7 @@ import copy
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from typing import Dict
+from typing import Dict, Optional
 
 from evaluation import (
     calculate_digit_classification_accuracy,
@@ -131,7 +131,7 @@ def ssd_unlearn_subset(
     pretrained_model: nn.Module,
     retain_loader: DataLoader,
     forget_loader: DataLoader,
-    target_subset_id: int,
+    target_subset_id: Optional[int],  # Change from int to Optional[int]
     device: torch.device,
     *,
     lower_bound: float = 1.0,
@@ -146,6 +146,9 @@ def ssd_unlearn_subset(
     This method does NOT perform any further fine-tuning – the weights are
     multiplicatively dampened in a single shot.  The routine mirrors the output
     style of the other unlearning pipelines for consistency.
+    
+    Args:
+        target_subset_id: ID of target subset for MTL models, or None for no-MTL models
     
     Returns:
         tuple: (unlearned_model, metrics_dict) where metrics_dict contains the calculated accuracies
@@ -174,31 +177,43 @@ def ssd_unlearn_subset(
     # Accuracy evaluation (post-dampening, pre-fine-tune)
     print("\nCalculating accuracies after dampening…")
 
-    # Combine retain and forget datasets for a single pass evaluation
-    combined_dataset = []
-    for loader in (retain_loader, forget_loader):
-        for item in loader.dataset:
-            if len(item) == 3:
-                # MultiTaskDataset format
-                x, y_dig, y_sub = item
-                combined_dataset.append((x, y_dig, y_sub))
-            else:
-                # Standard dataset format - use dummy subset label
-                x, y_dig = item
-                combined_dataset.append((x, y_dig, 0))  # Use 0 as dummy subset label
+    # Choose evaluation strategy based on whether this is MTL or no-MTL
+    if target_subset_id is None:
+        # No-MTL case: Evaluate target and retain subsets separately
+        # This matches the baseline evaluation approach for no-MTL models
+        tgt_acc = calculate_overall_digit_classification_accuracy(unlearned_model, forget_loader, device)
+        oth_acc = calculate_overall_digit_classification_accuracy(unlearned_model, retain_loader, device)
+        
+        # For no-MTL models, subset identification is not meaningful
+        sub_tgt_acc = 0.0
+        sub_oth_acc = 0.0
+    else:
+        # MTL case: Use the original combined evaluation approach
+        # Combine retain and forget datasets for a single pass evaluation
+        combined_dataset = []
+        for loader in (retain_loader, forget_loader):
+            for item in loader.dataset:
+                if len(item) == 3:
+                    # MultiTaskDataset format
+                    x, y_dig, y_sub = item
+                    combined_dataset.append((x, y_dig, y_sub))
+                else:
+                    # Standard dataset format - use dummy subset label
+                    x, y_dig = item
+                    combined_dataset.append((x, y_dig, 0))  # Use 0 as dummy subset label
 
-    class _TempDataset(torch.utils.data.Dataset):
-        def __init__(self, data_list):
-            self.data = data_list
-        def __len__(self):
-            return len(self.data)
-        def __getitem__(self, idx):
-            return self.data[idx]
+        class _TempDataset(torch.utils.data.Dataset):
+            def __init__(self, data_list):
+                self.data = data_list
+            def __len__(self):
+                return len(self.data)
+            def __getitem__(self, idx):
+                return self.data[idx]
 
-    temp_loader = DataLoader(_TempDataset(combined_dataset), batch_size=retain_loader.batch_size, shuffle=False)
+        temp_loader = DataLoader(_TempDataset(combined_dataset), batch_size=retain_loader.batch_size, shuffle=False)
 
-    tgt_acc, oth_acc = calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
-    sub_tgt_acc, sub_oth_acc = calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
+        tgt_acc, oth_acc = calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
+        sub_tgt_acc, sub_oth_acc = calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
 
     print(f"Digit accuracy on target subset after SSD: {tgt_acc:.4f}")
     print(f"Digit accuracy on other subsets after SSD: {oth_acc:.4f}")

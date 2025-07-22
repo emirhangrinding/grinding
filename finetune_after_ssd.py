@@ -22,7 +22,7 @@ from tuning import optimise_ssd_hyperparams
 # --- Configuration ---
 MODEL_PATH = "/kaggle/input/latest-medium/pytorch/default/1/model_medium.h5" 
 DATASET_NAME = "CIFAR10"
-TARGET_SUBSET_ID = 0
+TARGET_SUBSET_ID = None  # Set to None for no-MTL models, or integer for MTL models
 NUM_CLIENTS = 10
 BATCH_SIZE = 128
 DATA_ROOT = "./data"
@@ -156,8 +156,17 @@ def main():
     print("\n--- Calculating metrics after SSD, before fine-tuning ---")
     unlearned_model.eval()
 
-    target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
-    target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+    if TARGET_SUBSET_ID is None:
+        # No-MTL case: evaluate target and retain subsets separately
+        target_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, forget_loader, device)
+        other_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, retain_loader, device)
+        target_subset_acc = 0.0  # Not meaningful for no-MTL
+        other_subset_acc = 0.0   # Not meaningful for no-MTL
+    else:
+        # MTL case: use the combined evaluation approach
+        target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+        target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+    
     test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
     mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
 
@@ -172,60 +181,66 @@ def main():
     # --- 2. Fine-tune the subset head ---
     print("\n--- Starting fine-tuning of the subset head ---")
     
-    # Freeze all parameters first
-    for param in unlearned_model.parameters():
-        param.requires_grad = False
-    
-    # Unfreeze only the subset_head parameters
-    params_to_tune = []
-    for name, param in unlearned_model.named_parameters():
-        if name.startswith("subset_head."):
-            param.requires_grad = True
-            params_to_tune.append(param)
-    
-    if not params_to_tune:
-        print("Warning: No parameters found for the subset head. Skipping fine-tuning.")
+    # Check if this is a multi-head model before trying to fine-tune subset head
+    if TARGET_SUBSET_ID is None:
+        print("Skipping subset head fine-tuning for no-MTL model (no subset head present).")
     else:
-        print(f"Fine-tuning {len(params_to_tune)} parameter tensors in the subset head.")
-
-        optimizer = optim.Adam(params_to_tune, lr=FT_LR)
-        criterion = nn.CrossEntropyLoss()
+        # Freeze all parameters first
+        for param in unlearned_model.parameters():
+            param.requires_grad = False
         
-        # Set the main model to eval mode to freeze batch norm stats,
-        # but keep the head being tuned in train mode.
-        unlearned_model.eval()
-        unlearned_model.subset_head.train()
+        # Unfreeze only the subset_head parameters
+        params_to_tune = []
+        for name, param in unlearned_model.named_parameters():
+            if name.startswith("subset_head."):
+                param.requires_grad = True
+                params_to_tune.append(param)
         
-        for epoch in range(FT_EPOCHS):
-            running_loss = 0.0
-            for inputs, _, subset_labels in retain_loader:
-                inputs, subset_labels = inputs.to(device), subset_labels.to(device)
+        if not params_to_tune:
+            print("Warning: No parameters found for the subset head. Skipping fine-tuning.")
+        else:
+            print(f"Fine-tuning {len(params_to_tune)} parameter tensors in the subset head.")
 
-                optimizer.zero_grad()
-                _, subset_logits, _ = unlearned_model(inputs)
-                loss = criterion(subset_logits, subset_labels)
-                loss.backward()
-                optimizer.step()
-                running_loss += loss.item() * inputs.size(0)
-
-            epoch_loss = running_loss / len(retain_loader.dataset)
-            print(f"Fine-tuning Epoch {epoch+1}/{FT_EPOCHS}, Loss on Retain Set: {epoch_loss:.4f}")
-
-            # --- Evaluation after epoch ---
-            print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{FT_EPOCHS} ---")
+            optimizer = optim.Adam(params_to_tune, lr=FT_LR)
+            criterion = nn.CrossEntropyLoss()
+            
+            # Set the main model to eval mode to freeze batch norm stats,
+            # but keep the head being tuned in train mode.
             unlearned_model.eval()
+            unlearned_model.subset_head.train()
+            
+            for epoch in range(FT_EPOCHS):
+                running_loss = 0.0
+                for inputs, _, subset_labels in retain_loader:
+                    inputs, subset_labels = inputs.to(device), subset_labels.to(device)
 
-            target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
-            target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
-            test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
-            mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
+                    optimizer.zero_grad()
+                    _, subset_logits, _ = unlearned_model(inputs)
+                    loss = criterion(subset_logits, subset_labels)
+                    loss.backward()
+                    optimizer.step()
+                    running_loss += loss.item() * inputs.size(0)
 
-            print(f"Digit accuracy on target subset after SSD: {target_digit_acc:.4f}")
-            print(f"Digit accuracy on other subsets after SSD: {other_digit_acc:.4f}")
-            print(f"Subset ID accuracy on target subset after SSD: {target_subset_acc:.4f}")
-            print(f"Subset ID accuracy on other subsets after SSD: {other_subset_acc:.4f}")
-            print(f"[TEST] Digit accuracy after SSD: {test_digit_acc:.4f}")
-            print(f"Train-only MIA Score on forget set after SSD: {mia_score:.4f}")
+                epoch_loss = running_loss / len(retain_loader.dataset)
+                print(f"Fine-tuning Epoch {epoch+1}/{FT_EPOCHS}, Loss on Retain Set: {epoch_loss:.4f}")
+
+                # --- Evaluation after epoch ---
+                print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{FT_EPOCHS} ---")
+                unlearned_model.eval()
+
+                target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+                target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(unlearned_model, eval_loader, device, TARGET_SUBSET_ID)
+                test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
+                mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
+
+                print(f"Digit accuracy on target subset after fine-tuning: {target_digit_acc:.4f}")
+                print(f"Digit accuracy on other subsets after fine-tuning: {other_digit_acc:.4f}")
+                print(f"Subset ID accuracy on target subset after fine-tuning: {target_subset_acc:.4f}")
+                print(f"Subset ID accuracy on other subsets after fine-tuning: {other_subset_acc:.4f}")
+                print(f"[TEST] Digit accuracy after fine-tuning: {test_digit_acc:.4f}")
+                print(f"Train-only MIA Score after fine-tuning: {mia_score:.4f}")
+
+                unlearned_model.subset_head.train()  # Set back to training mode for next epoch
 
 
     print("\n--- Finetuning Script Finished ---")

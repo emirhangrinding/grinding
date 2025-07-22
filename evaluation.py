@@ -3,10 +3,21 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.metrics import accuracy_score
+from typing import Optional, Tuple
 
-def calculate_digit_classification_accuracy(model, data_loader, device, target_subset_id):
+def calculate_digit_classification_accuracy(model, data_loader, device, target_subset_id: Optional[int]) -> Tuple[float, float]:
     """
     Calculate digit classification accuracy for the target subset and other subsets.
+    
+    Args:
+        model: The model to evaluate
+        data_loader: DataLoader containing the evaluation data
+        device: Device to run evaluation on
+        target_subset_id: ID of the target subset to evaluate, or None for no-MTL models
+        
+    Returns:
+        Tuple of (target_accuracy, other_accuracy)
+        For no-MTL models, target_accuracy will be 0.0 and other_accuracy will be the overall accuracy
     """
     model.eval()
     target_correct = 0
@@ -39,19 +50,24 @@ def calculate_digit_classification_accuracy(model, data_loader, device, target_s
                 
             _, digit_preds = torch.max(digit_logits, 1)
 
-            target_mask = (subset_labels == target_subset_id)
-            other_mask = ~target_mask
+            # Handle the case where target_subset_id is None (no-MTL case)
+            if target_subset_id is None:
+                # For no-MTL models, treat all samples as "other" samples
+                target_mask = torch.zeros_like(subset_labels, dtype=torch.bool)
+                other_mask = torch.ones_like(subset_labels, dtype=torch.bool)
+            else:
+                target_mask = (subset_labels == target_subset_id)
+                other_mask = ~target_mask
 
-            # Ensure masks are tensors, not scalars
-            if not isinstance(target_mask, torch.Tensor):
-                # This shouldn't happen, but let's handle it just in case
-                print(f"Warning: target_mask is not a tensor: {type(target_mask)}, subset_labels shape: {subset_labels.shape}, target_subset_id: {target_subset_id}")
-                target_mask = torch.tensor([target_mask], device=subset_labels.device).expand_as(subset_labels)
-                other_mask = ~target_mask
-            elif target_mask.numel() == 1 and subset_labels.numel() > 1:
-                # Handle case where comparison results in scalar for vector input
-                target_mask = target_mask.expand_as(subset_labels)
-                other_mask = ~target_mask
+                # Ensure masks are tensors, not scalars
+                if not isinstance(target_mask, torch.Tensor):
+                    print(f"Warning: target_mask is not a tensor: {type(target_mask)}, subset_labels shape: {subset_labels.shape}, target_subset_id: {target_subset_id}")
+                    target_mask = torch.tensor([target_mask], device=subset_labels.device).expand_as(subset_labels)
+                    other_mask = ~target_mask
+                elif target_mask.numel() == 1 and subset_labels.numel() > 1:
+                    # Handle case where comparison results in scalar for vector input
+                    target_mask = target_mask.expand_as(subset_labels)
+                    other_mask = ~target_mask
 
             target_correct += (digit_preds[target_mask] == digit_labels[target_mask]).sum().item()
             other_correct += (digit_preds[other_mask] == digit_labels[other_mask]).sum().item()
@@ -64,9 +80,19 @@ def calculate_digit_classification_accuracy(model, data_loader, device, target_s
 
     return target_accuracy, other_accuracy
 
-def calculate_subset_identification_accuracy(model, data_loader, device, target_subset_id):
+def calculate_subset_identification_accuracy(model, data_loader, device, target_subset_id: Optional[int]) -> Tuple[float, float]:
     """
     Calculate subset identification accuracy for the target subset and other subsets.
+    
+    Args:
+        model: The model to evaluate
+        data_loader: DataLoader containing the evaluation data
+        device: Device to run evaluation on
+        target_subset_id: ID of the target subset to evaluate, or None for no-MTL models
+        
+    Returns:
+        Tuple of (target_accuracy, other_accuracy)
+        For no-MTL models, target_accuracy will be 0.0 and other_accuracy will be the overall accuracy
     """
     model.eval()
     target_correct = 0
@@ -99,18 +125,24 @@ def calculate_subset_identification_accuracy(model, data_loader, device, target_
                 # Return dummy predictions (all zeros) since there's no subset head
                 subset_preds = torch.zeros_like(subset_labels)
 
-            target_mask = (subset_labels == target_subset_id)
-            other_mask = ~target_mask
+            # Handle the case where target_subset_id is None (no-MTL case)
+            if target_subset_id is None:
+                # For no-MTL models, treat all samples as "other" samples
+                target_mask = torch.zeros_like(subset_labels, dtype=torch.bool)
+                other_mask = torch.ones_like(subset_labels, dtype=torch.bool)
+            else:
+                target_mask = (subset_labels == target_subset_id)
+                other_mask = ~target_mask
 
-            # Ensure masks are tensors, not scalars
-            if not isinstance(target_mask, torch.Tensor):
-                print(f"Warning: target_mask is not a tensor: {type(target_mask)}, subset_labels shape: {subset_labels.shape}, target_subset_id: {target_subset_id}")
-                target_mask = torch.tensor([target_mask], device=subset_labels.device).expand_as(subset_labels)
-                other_mask = ~target_mask
-            elif target_mask.numel() == 1 and subset_labels.numel() > 1:
-                # Handle case where comparison results in scalar for vector input
-                target_mask = target_mask.expand_as(subset_labels)
-                other_mask = ~target_mask
+                # Ensure masks are tensors, not scalars
+                if not isinstance(target_mask, torch.Tensor):
+                    print(f"Warning: target_mask is not a tensor: {type(target_mask)}, subset_labels shape: {subset_labels.shape}, target_subset_id: {target_subset_id}")
+                    target_mask = torch.tensor([target_mask], device=subset_labels.device).expand_as(subset_labels)
+                    other_mask = ~target_mask
+                elif target_mask.numel() == 1 and subset_labels.numel() > 1:
+                    # Handle case where comparison results in scalar for vector input
+                    target_mask = target_mask.expand_as(subset_labels)
+                    other_mask = ~target_mask
 
             target_correct += (subset_preds[target_mask] == subset_labels[target_mask]).sum().item()
             other_correct += (subset_preds[other_mask] == subset_labels[other_mask]).sum().item()

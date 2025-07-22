@@ -1,5 +1,6 @@
 import optuna
 from torch.utils.data import DataLoader
+from typing import Optional
 
 from utils import set_global_seed, DEFAULT_BASELINE_METRICS, calculate_baseline_delta_score
 from ssd import ssd_unlearn_subset
@@ -10,7 +11,7 @@ def optimise_ssd_hyperparams(
     forget_loader,
     test_loader,
     device,
-    target_subset_id: int,
+    target_subset_id: Optional[int],
     n_trials: int = 25,
     seed: int = 42,
     calculate_fisher_on: str = "subset",
@@ -26,8 +27,8 @@ def optimise_ssd_hyperparams(
 
     For no-MTL case (target_subset_id is None):
         The optimisation minimises the distance to baseline metrics:
-        • target_digit_acc: 0.9000 (Train accuracy on target)
-        • other_digit_acc: 0.9900 (Train accuracy on digit)
+        • target_digit_acc: 0.9000 (Train accuracy on target subset)
+        • other_digit_acc: 0.9900 (Train accuracy on other subsets)  
         • test_digit_acc: 0.9100 (Test Accuracy)
 
     The objective minimises the weighted absolute difference between current metrics
@@ -35,48 +36,31 @@ def optimise_ssd_hyperparams(
     """
 
     # Check if this is the no-MTL case
-    is_no_mtl = target_subset_id is None
-
+    is_no_mtl = (target_subset_id is None)
+    
     if is_no_mtl:
-        # No-MTL baselines as specified by user
-        BASELINE_METRICS_WITH_MIA = {
-            'target_digit_acc': 0.9000,  # Train accuracy on target: 90.00%
-            'other_digit_acc': 0.9900,   # Train accuracy on digit: 99.00%
-            'target_subset_acc': 0.0000,  # Not meaningful in no-MTL, but kept for compatibility
-            'other_subset_acc': 0.0000,   # Not meaningful in no-MTL, but kept for compatibility
-            'test_digit_acc': 0.9100,     # Test Accuracy: 91.00%
-            'mia_score': 75.44             # Keep same MIA baseline for now
-        }
-
-        # Only the relevant metrics for optimization in no-MTL case
+        # No-MTL baseline metrics (from train_baseline_all_no_mtl.py results)
         BASELINE_METRICS_TUNING = {
-            'target_digit_acc': 0.9000,  # Train accuracy on target: 90.00%
-            'other_digit_acc': 0.9900,   # Train accuracy on digit: 99.00%
-            'test_digit_acc': 0.9100     # Test Accuracy: 91.00%
+            'target_digit_acc': 0.9000,  # Accuracy on target subset 
+            'other_digit_acc': 0.9900,   # Accuracy on other subsets (training data)
+            'test_digit_acc': 0.9100,    # Test accuracy
         }
-        print("Using no-MTL baselines:")
-        print("  - Train accuracy on target: 90.00%")
-        print("  - Train accuracy on digit: 99.00%")
-        print("  - Test Accuracy: 91.00%")
     else:
-        # MTL baselines (original)
-        BASELINE_METRICS_WITH_MIA = DEFAULT_BASELINE_METRICS.copy()
-        BASELINE_METRICS_WITH_MIA['mia_score'] = 75.44
-
-        # Only the specified metrics for optimization in MTL case
+        # MTL baseline metrics (from baseline.py results)  
         BASELINE_METRICS_TUNING = {
-            'target_digit_acc': 0.9056,
-            'other_digit_acc': 0.9998,
-            'target_subset_acc': 0.0000,
-            'test_digit_acc': 0.9130
+            'target_digit_acc': 0.9056,  # Accuracy on target subset
+            'other_digit_acc': 0.9998,   # Accuracy on other subsets
+            'target_subset_acc': 0.0000, # Subset ID accuracy on target (should be 0 after unlearning)
+            'other_subset_acc': 1.0000,  # Subset ID accuracy on other subsets
+            'test_digit_acc': 0.9130,    # Test accuracy
         }
-        print("Using MTL baselines:")
-        print("  - Target digit accuracy: 90.56%")
-        print("  - Other digit accuracy: 99.98%")
-        print("  - Target subset accuracy: 0.00%")
-        print("  - Test digit accuracy: 91.30%")
 
-    sampler = optuna.samplers.TPESampler(seed=seed)
+    print(f"Optimising SSD hyperparameters ({'no-MTL' if is_no_mtl else 'MTL'} case)")
+    print(f"Target baseline metrics: {BASELINE_METRICS_TUNING}")
+
+    # Set up Optuna sampler with fixed seed for reproducibility
+    sampler = optuna.samplers.TPESampler(seed=seed, n_startup_trials=10, n_ei_candidates=24)
+    
     study = optuna.create_study(direction="minimize", sampler=sampler)
 
     def _objective(trial):
@@ -116,65 +100,44 @@ def optimise_ssd_hyperparams(
         # Calculate distance to baseline metrics (lower is better)
         delta_score = calculate_baseline_delta_score(current_metrics_tuning, BASELINE_METRICS_TUNING)
 
-        # Verbose output showing ALL metrics for monitoring
-        if is_no_mtl:
-            print(
-                f"[Trial {trial.number:03d}] α={alpha:.4f}, λ={lam:.4f} | "
-                f"Target Digit={current_metrics_all['target_digit_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['target_digit_acc']:.4f}), "
-                f"Other Digit={current_metrics_all['other_digit_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['other_digit_acc']:.4f}), "
-                f"Test Digit Overall={current_metrics_all['test_digit_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['test_digit_acc']:.4f}), "
-                f"MIA={current_metrics_all['mia_score']:.2f}% (baseline: {BASELINE_METRICS_WITH_MIA['mia_score']:.2f}%) | "
-                f"Delta Score={delta_score:.4f} (optimizing on 3 metrics: target_digit_acc, other_digit_acc, test_digit_acc)"
-            )
-        else:
-            print(
-                f"[Trial {trial.number:03d}] α={alpha:.4f}, λ={lam:.4f} | "
-                f"Target Digit={current_metrics_all['target_digit_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['target_digit_acc']:.4f}), "
-                f"Other Digit={current_metrics_all['other_digit_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['other_digit_acc']:.4f}), "
-                f"Target Subset={current_metrics_all['target_subset_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['target_subset_acc']:.4f}), "
-                f"Other Subset={current_metrics_all['other_subset_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['other_subset_acc']:.4f}), "
-                f"Test Digit Overall={current_metrics_all['test_digit_acc']:.4f} (baseline: {BASELINE_METRICS_WITH_MIA['test_digit_acc']:.4f}), "
-                f"MIA={current_metrics_all['mia_score']:.2f}% (baseline: {BASELINE_METRICS_WITH_MIA['mia_score']:.2f}%) | "
-                f"Delta Score={delta_score:.4f} (optimizing on 4 metrics: target_digit_acc, other_digit_acc, target_subset_acc, test_digit_acc)"
-            )
-
-        # Keep track of ALL metrics for analysis
+        # Log trial results for debugging
         trial.set_user_attr("target_digit_acc", current_metrics_all['target_digit_acc'])
         trial.set_user_attr("other_digit_acc", current_metrics_all['other_digit_acc'])
-        trial.set_user_attr("target_subset_acc", current_metrics_all['target_subset_acc'])
-        trial.set_user_attr("other_subset_acc", current_metrics_all['other_subset_acc'])
         trial.set_user_attr("test_digit_acc", current_metrics_all['test_digit_acc'])
         trial.set_user_attr("mia_score", current_metrics_all['mia_score'])
-        trial.set_user_attr("delta_score", delta_score)
+        if not is_no_mtl:
+            trial.set_user_attr("target_subset_acc", current_metrics_all['target_subset_acc'])
+            trial.set_user_attr("other_subset_acc", current_metrics_all['other_subset_acc'])
 
         return delta_score
 
-    study.optimize(_objective, n_trials=n_trials, show_progress_bar=True)
+    study.optimize(_objective, n_trials=n_trials)
 
-    print("\nOptuna optimisation completed.")
-    num_opt_metrics = len(BASELINE_METRICS_TUNING)
-    print(f"Best delta score (closest to baseline on {num_opt_metrics} metrics): {study.best_value:.4f}")
-    print("Best hyper-parameters (α, λ):", study.best_params)
+    # Print detailed results
+    print(f"\n--- SSD Hyperparameter Optimisation Finished ({'no-MTL' if is_no_mtl else 'MTL'} case) ---")
+    print(f"Best α (exponent): {study.best_params['alpha']:.6f}")
+    print(f"Best λ (dampening): {study.best_params['lambda']:.6f}")
+    print(f"Best objective value (delta score): {study.best_value:.6f}")
     
-    # Print ALL metrics vs baseline for the best trial
-    best_trial = study.best_trial
     print("\nBest trial metrics vs baseline:")
     print("(* indicates metrics used for optimization)")
+    best_trial = study.best_trial
+    for key in BASELINE_METRICS_TUNING:
+        current_val = best_trial.user_attrs[key]
+        baseline_val = BASELINE_METRICS_TUNING[key]
+        diff = abs(current_val - baseline_val)
+        print(f" * {key}: {current_val:.4f} (baseline: {baseline_val:.4f}, diff: {diff:.4f})")
     
-    if is_no_mtl:
-        metrics_to_show = ['target_digit_acc', 'other_digit_acc', 'test_digit_acc', 'mia_score']
-        optimization_metrics = set(BASELINE_METRICS_TUNING.keys())
+    # Print non-optimized metrics for reference
+    if not is_no_mtl:
+        mia_score = best_trial.user_attrs['mia_score']
+        print(f"   mia_score: {mia_score:.2f}%")
     else:
-        metrics_to_show = ['target_digit_acc', 'other_digit_acc', 'target_subset_acc', 'other_subset_acc', 'test_digit_acc', 'mia_score']
-        optimization_metrics = set(BASELINE_METRICS_TUNING.keys())
-    
-    for metric in metrics_to_show:
-        current_val = best_trial.user_attrs[metric]
-        baseline_val = BASELINE_METRICS_WITH_MIA[metric]
-        star = "*" if metric in optimization_metrics else " "
-        if metric == 'mia_score':
-            print(f" {star} {metric}: {current_val:.2f}% (baseline: {baseline_val:.2f}%, diff: {abs(current_val - baseline_val):.2f}%)")
-        else:
-            print(f" {star} {metric}: {current_val:.4f} (baseline: {baseline_val:.4f}, diff: {abs(current_val - baseline_val):.4f})")
+        target_subset_acc = best_trial.user_attrs.get('target_subset_acc', 0.0)
+        other_subset_acc = best_trial.user_attrs.get('other_subset_acc', 0.0)
+        mia_score = best_trial.user_attrs['mia_score']
+        print(f"   target_subset_acc: {target_subset_acc:.4f}")
+        print(f"   other_subset_acc: {other_subset_acc:.4f}")  
+        print(f"   mia_score: {mia_score:.2f}%")
 
     return study 
