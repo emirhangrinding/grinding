@@ -10,7 +10,7 @@ from models import MTL_Two_Heads_ResNet
 from tuning import optimise_ssd_hyperparams
 
 # Configuration - EDIT THESE VALUES
-MODEL_PATH = "/kaggle/input/latest-medium/pytorch/default/1/model_medium.h5" 
+MODEL_PATH = "baseline_mtl_all_clients.h5" 
 DATASET_NAME = "CIFAR10"
 TARGET_SUBSET_ID = 0
 NUM_CLIENTS = 10
