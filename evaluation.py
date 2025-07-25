@@ -205,12 +205,14 @@ def _get_model_outputs(loader, model, device):
                 probs = torch.cat((digit_probs, subset_probs), dim=1)
             else:
                 # Standard model with single head
-                digit_logits = model_outputs
+                if isinstance(model_outputs, tuple):
+                    digit_logits = model_outputs[0]
+                else:
+                    digit_logits = model_outputs
                 digit_probs = torch.softmax(digit_logits, dim=1)
-                # For compatibility with MTL evaluation, we'll create dummy subset probs
-                # This is only used for MIA attacks which focus on the output distribution
-                dummy_subset_probs = torch.zeros(digit_probs.size(0), 1, device=digit_probs.device)
-                probs = torch.cat((digit_probs, dummy_subset_probs), dim=1)
+                # The dummy subset probs were confusing the MIA attacker for no-MTL models.
+                # The attacker now only receives the digit probabilities.
+                probs = digit_probs
             
             outputs.append(probs.cpu().numpy())
 
