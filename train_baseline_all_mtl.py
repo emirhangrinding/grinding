@@ -13,7 +13,7 @@ def train_baseline_all_clients(
     setting: str = "non-iid",
     num_clients: int = 10,
     batch_size: int = 128,
-    num_epochs: int = 50,
+    num_epochs: int = 200,
     lambda_1: float = 1.0,
     lambda_2: float = 1.0,
     lambda_dis: float = 0.1,
