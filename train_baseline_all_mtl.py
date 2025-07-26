@@ -86,5 +86,5 @@ if __name__ == "__main__":
         head_size="medium",
         seed=42,
         path="baseline_mtl_all_clients.h5",
-        num_epochs=50
+        num_epochs=200
     ) 
