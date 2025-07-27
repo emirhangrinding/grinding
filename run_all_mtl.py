@@ -9,8 +9,8 @@ from data import generate_subdatasets
 from models import MTL_Two_Heads_ResNet
 from evaluation import get_membership_attack_prob_train_only, calculate_overall_digit_classification_accuracy, calculate_digit_classification_accuracy
 
-def evaluate_baseline_mtl_model(model_path, dataset_name="FashionMNIST", num_clients=11, 
-                                 target_client_id=10, batch_size=128, data_root="./data"):
+def evaluate_baseline_mtl_model(model_path, dataset_name="CIFAR10", num_clients=10, 
+                                 target_client_id=0, batch_size=128, data_root="./data"):
     """
     Evaluate the baseline MTL model with comprehensive metrics including MIA scores.
     """
@@ -22,7 +22,7 @@ def evaluate_baseline_mtl_model(model_path, dataset_name="FashionMNIST", num_cli
     print(f"Using device: {device}")
     
     # Load model
-    model = MTL_Two_Heads_ResNet(dataset_name=dataset_name)
+    model = MTL_Two_Heads_ResNet(dataset_name=dataset_name, num_clients=num_clients, head_size="medium")
     try:
         model.load_state_dict(torch.load(model_path, map_location=device))
         model.to(device)
@@ -36,19 +36,19 @@ def evaluate_baseline_mtl_model(model_path, dataset_name="FashionMNIST", num_cli
     print("Setting up data loaders for evaluation...")
     clients_data, _, full_dataset = generate_subdatasets(
         dataset_name=dataset_name,
-        setting="iid", # MTL uses IID
+        setting="non-iid", # Match training script
         num_clients=num_clients,
         data_root=data_root
     )
     
     # Create target and other client data loaders
-    target_key = f"client{target_client_id + 1}"
+    target_key = f"client{target_client_id}"
     target_indices = clients_data[target_key]
     
     other_indices = []
     for i in range(num_clients):
         if i != target_client_id:
-            other_indices.extend(clients_data[f"client{i + 1}"])
+            other_indices.extend(clients_data[f"client{i}"])
 
     target_dataset = Subset(full_dataset, target_indices)
     other_dataset = Subset(full_dataset, other_indices)
@@ -60,7 +60,7 @@ def evaluate_baseline_mtl_model(model_path, dataset_name="FashionMNIST", num_cli
     target_acc, _ = calculate_digit_classification_accuracy(model, target_loader, device, target_subset_id=target_client_id)
     print(f"Accuracy on target client {target_client_id}: {target_acc:.4f}")
     
-    other_acc, _ = calculate_digit_classification_accuracy(model, other_loader, device, target_subset_id=None) # Pass None for other clients
+    _, other_acc = calculate_digit_classification_accuracy(model, other_loader, device, target_subset_id=None) # Pass None for other clients
     print(f"Accuracy on other clients: {other_acc:.4f}")
     
     # Calculate MIA score
