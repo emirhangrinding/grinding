@@ -42,13 +42,13 @@ def evaluate_baseline_mtl_model(model_path, dataset_name="CIFAR10", num_clients=
     )
     
     # Create target and other client data loaders
-    target_key = f"client{target_client_id}"
+    target_key = f"client{target_client_id + 1}"
     target_indices = clients_data[target_key]
     
     other_indices = []
     for i in range(num_clients):
         if i != target_client_id:
-            other_indices.extend(clients_data[f"client{i}"])
+            other_indices.extend(clients_data[f"client{i + 1}"])
 
     target_dataset = Subset(full_dataset, target_indices)
     other_dataset = Subset(full_dataset, other_indices)
