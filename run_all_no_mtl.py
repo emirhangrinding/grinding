@@ -170,6 +170,27 @@ def main():
         print(f"--- Error running {tune_script}: {e} ---")
         return
 
+    # Step 3: Fine-tune the unlearned model
+    print("\n--- Step 3: Fine-tuning the unlearned no-MTL model ---")
+    unlearned_model_path = "unlearned_model_no_mtl.h5"  # This should be the output of run_ssd_tuning_no_mtl.py
+    if not os.path.exists(unlearned_model_path):
+        print(f"--- Warning: Unlearned model {unlearned_model_path} not found. Skipping fine-tuning. ---")
+    else:
+        finetune_script = "finetune.py"
+        finetune_command = (
+            f"python {finetune_script} "
+            f"--model-path {unlearned_model_path} "
+            f"--epochs 10 "
+            f"--target-client-id 0" # As per the script
+        )
+        
+        try:
+            subprocess.run(finetune_command, shell=True, check=True)
+            print(f"--- Successfully completed: {finetune_script} ---")
+        except subprocess.CalledProcessError as e:
+            print(f"--- Error running {finetune_script}: {e} ---")
+            return
+
     print("\nFull workflow completed successfully!")
 
 if __name__ == "__main__":

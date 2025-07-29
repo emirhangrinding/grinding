@@ -1,6 +1,8 @@
 import optuna
+import torch
 from torch.utils.data import DataLoader
 from typing import Optional
+import io
 
 from utils import set_global_seed, DEFAULT_BASELINE_METRICS, calculate_baseline_delta_score
 from ssd import ssd_unlearn_subset
@@ -82,6 +84,12 @@ def optimise_ssd_hyperparams(
             calculate_fisher_on=calculate_fisher_on,
         )
 
+        # Store the model state in memory to avoid saving to disk every trial
+        model_state = io.BytesIO()
+        torch.save(unlearned_model.state_dict(), model_state)
+        trial.set_user_attr("model_state", model_state.getvalue())
+
+
         # Calculate ALL metrics from SSD results
         current_metrics_all = {
             'target_digit_acc': ssd_metrics['target_digit_acc'],
@@ -139,5 +147,19 @@ def optimise_ssd_hyperparams(
         print(f"   target_subset_acc: {target_subset_acc:.4f}")
         print(f"   other_subset_acc: {other_subset_acc:.4f}")  
         print(f"   mia_score: {mia_score:.2f}%")
+
+    # Save the best model
+    best_model_state_bytes = best_trial.user_attrs["model_state"]
+    best_model_state = io.BytesIO(best_model_state_bytes)
+    best_model_state.seek(0)
+    
+    # We need to load it into the original model structure
+    # The `pretrained_model` is a good template for this.
+    final_model = pretrained_model
+    final_model.load_state_dict(torch.load(best_model_state, map_location=device))
+    
+    output_filename = "unlearned_model_mtl.h5" if not is_no_mtl else "unlearned_model_no_mtl.h5"
+    torch.save(final_model.state_dict(), output_filename)
+    print(f"\n✓ Best unlearned model saved to: {output_filename}")
 
     return study 
