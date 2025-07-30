@@ -127,7 +127,7 @@ def main():
     print("Starting the full workflow...")
 
     # Define the model file path (should match what train_baseline_all_no_mtl.py saves)
-    baseline_model_path = "baseline_all_clients_model.h5"
+    baseline_model_path = "/kaggle/input/no-mtl/pytorch/default/1/baseline_all_clients_model.h5"
 
     # Step 1: Train the baseline model on all clients (only if not already trained)
     if os.path.exists(baseline_model_path):

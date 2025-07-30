@@ -15,7 +15,7 @@ def optimise_ssd_hyperparams(
     device,
     target_subset_id: Optional[int],
     n_trials: int = 25,
-    seed: int = 42,
+    seed: int = 49,
     calculate_fisher_on: str = "subset",
 ):
     """Run TPE search to tune SSD hyper-parameters α (exponent) and λ (dampening_constant).
@@ -67,7 +67,7 @@ def optimise_ssd_hyperparams(
 
     def _objective(trial):
         alpha = trial.suggest_float("alpha", 0.1, 100.0, log=True)
-        lam = trial.suggest_float("lambda", 0.1, 5.0, log=True)
+        lam = trial.suggest_float("lambda", 0.01, 10.0, log=True)
 
         # Apply SSD unlearning with the proposed hyper-parameters
         unlearned_model, ssd_metrics = ssd_unlearn_subset(

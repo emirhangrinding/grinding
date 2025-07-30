@@ -125,6 +125,23 @@ def finetune_model(
             epoch_loss = running_loss / len(retain_loader.dataset)
             print(f"Fine-tuning Epoch {epoch+1}/{epochs}, Loss on Retain Set: {epoch_loss:.4f}")
 
+            # --- Evaluation after epoch ---
+            print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{epochs} ---")
+            model.eval()
+
+            target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, train_loader, device, target_client_id)
+            target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(model, train_loader, device, target_client_id)
+            mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
+
+            print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
+            print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
+            print(f"Subset ID accuracy on target subset: {target_subset_acc:.4f}")
+            print(f"Subset ID accuracy on other subsets: {other_subset_acc:.4f}")
+            print(f"Train-only MIA Score: {mia_score:.4f}")
+
+            # Set model back to training mode for the next epoch
+            model.subset_head.train()
+
     else: # No-MTL
         print("\n--- Fine-tuning entire model for no-MTL model ---")
         optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -136,7 +153,7 @@ def finetune_model(
             for inputs, labels in retain_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
-                outputs, _ = model(inputs) # No subset logits for standard model
+                outputs = model(inputs) # No subset logits for standard model
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
@@ -145,29 +162,20 @@ def finetune_model(
             epoch_loss = running_loss / len(retain_loader.dataset)
             print(f"Fine-tuning Epoch {epoch+1}/{epochs}, Loss on Retain Set: {epoch_loss:.4f}")
 
-    # --- Evaluation after fine-tuning ---
-    print("\n--- Calculating metrics after fine-tuning ---")
-    model.eval()
+            # --- Evaluation after epoch ---
+            print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{epochs} ---")
+            model.eval()
 
-    if is_mtl:
-        target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, train_loader, device, target_client_id)
-        target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(model, train_loader, device, target_client_id)
-        mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
+            target_digit_acc = calculate_overall_digit_classification_accuracy(model, forget_loader, device)
+            other_digit_acc = calculate_overall_digit_classification_accuracy(model, retain_loader, device)
+            mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
 
-        print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
-        print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
-        print(f"Subset ID accuracy on target subset: {target_subset_acc:.4f}")
-        print(f"Subset ID accuracy on other subsets: {other_subset_acc:.4f}")
-        print(f"Train-only MIA Score: {mia_score:.4f}")
-    else:
-        target_digit_acc = calculate_overall_digit_classification_accuracy(model, forget_loader, device)
-        other_digit_acc = calculate_overall_digit_classification_accuracy(model, retain_loader, device)
-        mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
+            print(f"Digit accuracy on forgotten data: {target_digit_acc:.4f}")
+            print(f"Digit accuracy on retained data: {other_digit_acc:.4f}")
+            print(f"Train-only MIA Score: {mia_score:.4f}")
 
-        print(f"Digit accuracy on forgotten data: {target_digit_acc:.4f}")
-        print(f"Digit accuracy on retained data: {other_digit_acc:.4f}")
-        print(f"Train-only MIA Score: {mia_score:.4f}")
-
+            # Set model back to training mode for the next epoch
+            model.train()
 
     # Save the fine-tuned model
     finetuned_model_path = model_path.replace(".h5", "_finetuned.h5")
