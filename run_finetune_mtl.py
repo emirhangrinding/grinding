@@ -58,9 +58,13 @@ def main():
         if i != target_client_id:
             other_indices.extend(clients_data[f"client{i + 1}"])
 
-    retain_dataset = MultiTaskDataset(Subset(full_dataset, other_indices), subset_id=None, num_subsets=num_clients)
-    forget_dataset = MultiTaskDataset(Subset(full_dataset, target_indices), subset_id=target_client_id, num_subsets=num_clients)
-    
+    # Create a MultiTaskDataset that attaches subset labels to each sample
+    multitask_dataset = MultiTaskDataset(full_dataset, clients_data)
+
+    # Create retain (other clients) and forget (target client) datasets
+    retain_dataset = Subset(multitask_dataset, other_indices)
+    forget_dataset = Subset(multitask_dataset, target_indices)
+
     retain_loader = DataLoader(retain_dataset, batch_size=128, shuffle=True)
     forget_loader = DataLoader(forget_dataset, batch_size=128, shuffle=True)
 
