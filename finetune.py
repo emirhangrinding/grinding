@@ -115,10 +115,19 @@ def finetune_model(
         optimizer = optim.Adam(params_to_tune, lr=lr)
         criterion = nn.CrossEntropyLoss()
         
-        model.eval()
-        model.subset_head.train()
-
         for epoch in range(epochs):
+            # Set the entire model to training mode
+            # This is crucial for layers like BatchNorm to work correctly,
+            # even if we only intend to update the subset_head weights.
+            model.train() 
+            # Freeze all parameters again inside the loop
+            for param in model.parameters():
+                param.requires_grad = False
+            # Unfreeze only the subset_head parameters
+            for name, param in model.named_parameters():
+                if name.startswith("subset_head."):
+                    param.requires_grad = True
+
             running_loss = 0.0
             for inputs, _, subset_labels in retain_loader:
                 inputs, subset_labels = inputs.to(device), subset_labels.to(device)
@@ -134,6 +143,7 @@ def finetune_model(
 
             # --- Evaluation after epoch ---
             print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{epochs} ---")
+            # Set the entire model to evaluation mode for accurate metrics
             model.eval()
 
             target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, train_loader, device, target_client_id)
@@ -148,16 +158,15 @@ def finetune_model(
             print(f"Test set accuracy: {test_acc:.4f}")
             print(f"Train-only MIA Score: {mia_score:.4f}")
 
-            # Set model back to training mode for the next epoch
-            model.subset_head.train()
-
+            # No need to set it back to train here, it will be done at the start of the next epoch.
+   
     else: # No-MTL
         print("\n--- Fine-tuning entire model for no-MTL model ---")
         optimizer = optim.Adam(model.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss()
 
-        model.train()
         for epoch in range(epochs):
+            model.train()
             running_loss = 0.0
             for inputs, labels in retain_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
@@ -185,9 +194,8 @@ def finetune_model(
             print(f"Test set accuracy: {test_acc:.4f}")
             print(f"Train-only MIA Score: {mia_score:.4f}")
 
-            # Set model back to training mode for the next epoch
-            model.train()
-
+            # Set model back to training mode for the next epoch - this is now handled at the top of the loop
+            
     # Save the fine-tuned model
     finetuned_model_path = model_path.replace(".h5", "_finetuned.h5")
     torch.save(model.state_dict(), finetuned_model_path)
