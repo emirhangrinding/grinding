@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-import subprocess
 import os
 import torch
 from torch.utils.data import DataLoader, Subset
 
 from utils import set_global_seed, SEED_DEFAULT
-from data import generate_subdatasets, MultiTaskDataset
+from data import generate_subdatasets, MultiTaskDataset, transform_test_cifar
 from models import MTL_Two_Heads_ResNet
 from ssd import ssd_unlearn_subset
+from finetune import finetune_model
+from torchvision.datasets import CIFAR10
 
 def main():
     """
@@ -58,15 +59,15 @@ def main():
         if i != target_client_id:
             other_indices.extend(clients_data[f"client{i + 1}"])
 
-    # Create a MultiTaskDataset that attaches subset labels to each sample
     multitask_dataset = MultiTaskDataset(full_dataset, clients_data)
-
-    # Create retain (other clients) and forget (target client) datasets
     retain_dataset = Subset(multitask_dataset, other_indices)
     forget_dataset = Subset(multitask_dataset, target_indices)
-
+    
     retain_loader = DataLoader(retain_dataset, batch_size=128, shuffle=True)
     forget_loader = DataLoader(forget_dataset, batch_size=128, shuffle=True)
+    
+    test_base = CIFAR10(root="./data", train=False, download=True, transform=transform_test_cifar)
+    test_loader = DataLoader(test_base, batch_size=128, shuffle=False)
 
     # Step 1: Run SSD unlearning with optimized parameters
     print("\n--- Step 1: Running SSD unlearning for MTL model with optimized parameters ---")
@@ -82,32 +83,28 @@ def main():
         calculate_fisher_on="subset"
     )
 
-    # Save the unlearned model
-    try:
-        torch.save(unlearned_model.state_dict(), unlearned_model_path)
-        print(f"✓ Successfully saved unlearned model to {unlearned_model_path}")
-    except Exception as e:
-        print(f"✗ Error saving unlearned model: {e}")
-        return
-        
     # Step 2: Fine-tune the unlearned model
     print("\n--- Step 2: Fine-tuning the unlearned MTL model ---")
     
-    finetune_script = "finetune.py"
-    finetune_command = (
-        f"python {finetune_script} "
-        f"--model-path {unlearned_model_path} "
-        f"--is-mtl "
-        f"--epochs 10 "
-        f"--target-client-id {target_client_id}"
+    finetuned_model = finetune_model(
+        model=unlearned_model,
+        is_mtl=True,
+        retain_loader=retain_loader,
+        forget_loader=forget_loader,
+        test_loader=test_loader,
+        target_client_id=target_client_id,
+        epochs=10,
+        device=device,
     )
-    
-    try:
-        subprocess.run(finetune_command, shell=True, check=True)
-        print(f"--- Successfully completed: {finetune_script} ---")
-    except subprocess.CalledProcessError as e:
-        print(f"--- Error running {finetune_script}: {e} ---")
 
+    # Save the fine-tuned model
+    finetuned_model_path = unlearned_model_path.replace(".h5", "_finetuned.h5")
+    try:
+        torch.save(finetuned_model.state_dict(), finetuned_model_path)
+        print(f"✓ Successfully saved fine-tuned model to {finetuned_model_path}")
+    except Exception as e:
+        print(f"✗ Error saving fine-tuned model: {e}")
+        
     print("\nMTL unlearning and fine-tuning workflow completed successfully!")
 
 if __name__ == "__main__":

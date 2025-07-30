@@ -37,7 +37,7 @@ def test_evaluation_functions():
     mtl_model = MTL_Two_Heads_ResNet(dataset_name="CIFAR10", num_clients=5)
     no_mtl_model = StandardResNet(dataset_name="CIFAR10")
     
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     mtl_model.to(device)
     no_mtl_model.to(device)
     
@@ -90,7 +90,7 @@ def test_ssd_evaluation():
     
     # Create model
     model = StandardResNet(dataset_name="CIFAR10")
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
     print("\n1. Testing SSD with target_subset_id=None (correct for no-MTL):")
