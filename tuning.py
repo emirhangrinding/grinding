@@ -52,8 +52,8 @@ def optimise_ssd_hyperparams(
         BASELINE_METRICS_TUNING = {
             'target_digit_acc': 0.8956,  # Accuracy on target subset
             'other_digit_acc': 0.9998,   # Accuracy on other subsets
-            'target_subset_acc': 0.0000, # Subset ID accuracy on target (should be 0 after unlearning)
-            'other_subset_acc': 0.9974,  # Subset ID accuracy on other subsets
+            #'target_subset_acc': 0.0000, # Subset ID accuracy on target (should be 0 after unlearning)
+            #'other_subset_acc': 0.9974,  # Subset ID accuracy on other subsets
             'test_digit_acc': 0.9130,    # Test accuracy
         }
 
