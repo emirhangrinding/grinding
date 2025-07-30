@@ -6,8 +6,9 @@ from torch.utils.data import DataLoader, Subset, ConcatDataset
 import argparse
 import os
 
+from torchvision.datasets import MNIST, CIFAR10
+from data import generate_subdatasets, MultiTaskDataset, create_subset_data_loaders, transform_mnist, transform_test_cifar
 from utils import set_global_seed
-from data import generate_subdatasets, MultiTaskDataset, create_subset_data_loaders
 from models import MTL_Two_Heads_ResNet, StandardResNet
 from evaluation import (
     calculate_digit_classification_accuracy,
@@ -49,6 +50,12 @@ def finetune_model(
         num_clients=num_clients,
         data_root=data_root
     )
+
+    if dataset_name == "MNIST":
+        test_base = MNIST(root=data_root, train=False, download=True, transform=transform_mnist)
+    else:
+        test_base = CIFAR10(root=data_root, train=False, download=True, transform=transform_test_cifar)
+    test_loader = DataLoader(test_base, batch_size=batch_size, shuffle=False)
 
     if is_mtl:
         mtl_dataset = MultiTaskDataset(full_dataset, clients_data)
@@ -137,6 +144,8 @@ def finetune_model(
             print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
             print(f"Subset ID accuracy on target subset: {target_subset_acc:.4f}")
             print(f"Subset ID accuracy on other subsets: {other_subset_acc:.4f}")
+            test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
+            print(f"Test set accuracy: {test_acc:.4f}")
             print(f"Train-only MIA Score: {mia_score:.4f}")
 
             # Set model back to training mode for the next epoch
@@ -172,6 +181,8 @@ def finetune_model(
 
             print(f"Digit accuracy on forgotten data: {target_digit_acc:.4f}")
             print(f"Digit accuracy on retained data: {other_digit_acc:.4f}")
+            test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
+            print(f"Test set accuracy: {test_acc:.4f}")
             print(f"Train-only MIA Score: {mia_score:.4f}")
 
             # Set model back to training mode for the next epoch
