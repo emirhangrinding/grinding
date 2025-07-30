@@ -91,7 +91,7 @@ def main():
     """
     print("Starting the full MTL workflow...")
 
-    baseline_model_path = "/kaggle/input/no-mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
+    baseline_model_path = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
 
     # Step 1: Train the baseline model on all clients
     if os.path.exists(baseline_model_path):
