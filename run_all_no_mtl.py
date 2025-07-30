@@ -161,7 +161,7 @@ def main():
     # Step 2: Run SSD unlearning with Optuna tuning
     print("\n--- Step 2: Running SSD unlearning with Optuna tuning ---")
     tune_script = "run_ssd_tuning_no_mtl.py"
-    tune_command = f"python {tune_script}"
+    tune_command = f"python {tune_script} --model-path {baseline_model_path}"
     
     try:
         subprocess.run(tune_command, shell=True, check=True)

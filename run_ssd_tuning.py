@@ -3,6 +3,7 @@ import random
 import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import MNIST, CIFAR10
+import argparse
 
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, MultiTaskDataset, transform_mnist, transform_test_cifar, create_subset_data_loaders
@@ -10,7 +11,7 @@ from models import MTL_Two_Heads_ResNet
 from tuning import optimise_ssd_hyperparams
 
 # Configuration - EDIT THESE VALUES
-MODEL_PATH = "baseline_mtl_all_clients.h5" 
+# MODEL_PATH = "baseline_mtl_all_clients.h5" 
 DATASET_NAME = "CIFAR10"
 TARGET_SUBSET_ID = 0
 NUM_CLIENTS = 10
@@ -21,6 +22,10 @@ HEAD_SIZE = "medium"
 SEED = 42
 
 # Setup
+parser = argparse.ArgumentParser(description="Run SSD tuning for an MTL ResNet model.")
+parser.add_argument("--model-path", type=str, required=True, help="Path to the baseline MTL model file.")
+args = parser.parse_args()
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 set_global_seed(SEED)
 
@@ -70,7 +75,7 @@ test_loader = DataLoader(test_mtl_dataset, batch_size=BATCH_SIZE)
 
 # Load model
 model = MTL_Two_Heads_ResNet(dataset_name=DATASET_NAME, num_clients=NUM_CLIENTS, head_size=HEAD_SIZE)
-model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+model.load_state_dict(torch.load(args.model_path, map_location=device))
 model.to(device)
 model.eval()
 

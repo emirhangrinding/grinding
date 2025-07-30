@@ -2,6 +2,7 @@
 import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import MNIST, CIFAR10
+import argparse
 
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, transform_mnist, transform_test_cifar
@@ -9,7 +10,7 @@ from models import StandardResNet
 from tuning import optimise_ssd_hyperparams
 
 # Configuration - EDIT THESE VALUES
-MODEL_PATH = "baseline_all_clients_model.h5"  # From train_baseline_all_no_mtl.py
+# MODEL_PATH = "baseline_all_clients_model.h5"  # From train_baseline_all_no_mtl.py
 DATASET_NAME = "CIFAR10"
 TARGET_SUBSET_ID = 0
 NUM_CLIENTS = 10
@@ -19,6 +20,10 @@ DATA_ROOT = "./data"
 SEED = 42
 
 # Setup
+parser = argparse.ArgumentParser(description="Run SSD tuning for a standard ResNet model.")
+parser.add_argument("--model-path", type=str, required=True, help="Path to the baseline model file.")
+args = parser.parse_args()
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 set_global_seed(SEED)
 
@@ -55,7 +60,7 @@ test_loader = DataLoader(test_base, batch_size=BATCH_SIZE)
 
 # Load model
 model = StandardResNet(dataset_name=DATASET_NAME)
-model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+model.load_state_dict(torch.load(args.model_path, map_location=device))
 model.to(device)
 model.eval()
 
