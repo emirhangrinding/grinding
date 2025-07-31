@@ -8,7 +8,7 @@ from data import generate_subdatasets, MultiTaskDataset, transform_test_cifar
 from models import MTL_Two_Heads_ResNet
 from finetune import finetune_model
 from torchvision.datasets import CIFAR10
-from evaluation import evaluate_model, evaluate_subset_accuracies, train_only_mia
+from evaluation import calculate_digit_classification_accuracy, calculate_subset_identification_accuracy, get_membership_attack_prob_train_only, calculate_overall_digit_classification_accuracy
 
 def main():
     """
@@ -68,26 +68,24 @@ def main():
     print("\n--- Evaluating pre-unlearned model (MTL) ---")
 
     # Test set accuracy
-    test_acc, _ = evaluate_model(model, test_loader, device, is_mtl=True, target_client_id=target_client_id)
+    test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
     print(f"Test set accuracy: {test_acc:.4f}")
 
-    # Subset accuracies
-    subset_accuracies = evaluate_subset_accuracies(
-        model, full_dataset, clients_data, target_client_id, device, is_mtl=True
-    )
-    print(f"Digit accuracy on target subset: {subset_accuracies['target_digit_acc']:.4f}")
-    print(f"Digit accuracy on other subsets: {subset_accuracies['other_digit_acc']:.4f}")
-    print(f"Subset ID accuracy on target subset: {subset_accuracies['target_id_acc']:.4f}")
-    print(f"Subset ID accuracy on other subsets: {subset_accuracies['other_id_acc']:.4f}")
+    # Digit accuracy
+    target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, retain_loader, device, target_client_id)
+    print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
+    print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
+
+    # Subset ID accuracy
+    target_id_acc, other_id_acc = calculate_subset_identification_accuracy(model, retain_loader, device, target_client_id)
+    print(f"Subset ID accuracy on target subset: {target_id_acc:.4f}")
+    print(f"Subset ID accuracy on other subsets: {other_id_acc:.4f}")
 
     # Train-only MIA Score
-    mia_score = train_only_mia(
-        target_model=model,
+    mia_score = get_membership_attack_prob_train_only(
+        retain_loader=retain_loader,
         forget_loader=forget_loader,
-        test_loader=test_loader,
-        device=device,
-        is_mtl=True,
-        target_client_id=target_client_id
+        model=model
     )
     print(f"Train-only MIA Score: {mia_score:.4f}")
 

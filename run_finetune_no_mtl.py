@@ -9,7 +9,7 @@ from models import StandardResNet
 from finetune import finetune_model
 from torchvision.datasets import CIFAR10
 from data import transform_test_cifar
-from evaluation import evaluate_model, evaluate_subset_accuracies, train_only_mia
+from evaluation import calculate_overall_digit_classification_accuracy, get_membership_attack_prob_train_only
 
 def main():
     """
@@ -67,23 +67,22 @@ def main():
     print("\n--- Evaluating pre-unlearned model (no-MTL) ---")
 
     # Test set accuracy
-    test_acc, _ = evaluate_model(model, test_loader, device)
+    test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
     print(f"Test set accuracy: {test_acc:.4f}")
 
-    # Subset accuracies
-    subset_accuracies = evaluate_subset_accuracies(
-        model, full_dataset, clients_data, target_client_id, device, is_mtl=False
-    )
-    print(f"Digit accuracy on target subset: {subset_accuracies['target_digit_acc']:.4f}")
-    print(f"Digit accuracy on other subsets: {subset_accuracies['other_digit_acc']:.4f}")
+    # Digit accuracy on target subset
+    target_digit_acc = calculate_overall_digit_classification_accuracy(model, forget_loader, device)
+    print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
+
+    # Digit accuracy on other subsets
+    other_digit_acc = calculate_overall_digit_classification_accuracy(model, retain_loader, device)
+    print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
 
     # Train-only MIA Score
-    mia_score = train_only_mia(
-        target_model=model,
+    mia_score = get_membership_attack_prob_train_only(
+        retain_loader=retain_loader,
         forget_loader=forget_loader,
-        test_loader=test_loader,
-        device=device,
-        is_mtl=False
+        model=model
     )
     print(f"Train-only MIA Score: {mia_score:.4f}")
 
