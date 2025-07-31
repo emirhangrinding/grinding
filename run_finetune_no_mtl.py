@@ -9,6 +9,7 @@ from models import StandardResNet
 from finetune import finetune_model
 from torchvision.datasets import CIFAR10
 from data import transform_test_cifar
+from evaluation import evaluate_model, evaluate_subset_accuracies, train_only_mia
 
 def main():
     """
@@ -61,6 +62,30 @@ def main():
     
     test_base = CIFAR10(root="./data", train=False, download=True, transform=transform_test_cifar)
     test_loader = DataLoader(test_base, batch_size=128, shuffle=False)
+
+    # Evaluate the pre-unlearned model
+    print("\n--- Evaluating pre-unlearned model (no-MTL) ---")
+
+    # Test set accuracy
+    test_acc, _ = evaluate_model(model, test_loader, device)
+    print(f"Test set accuracy: {test_acc:.4f}")
+
+    # Subset accuracies
+    subset_accuracies = evaluate_subset_accuracies(
+        model, full_dataset, clients_data, target_client_id, device, is_mtl=False
+    )
+    print(f"Digit accuracy on target subset: {subset_accuracies['target_digit_acc']:.4f}")
+    print(f"Digit accuracy on other subsets: {subset_accuracies['other_digit_acc']:.4f}")
+
+    # Train-only MIA Score
+    mia_score = train_only_mia(
+        target_model=model,
+        forget_loader=forget_loader,
+        test_loader=test_loader,
+        device=device,
+        is_mtl=False
+    )
+    print(f"Train-only MIA Score: {mia_score:.4f}")
 
     # Fine-tune the unlearned model
     print("\n--- Fine-tuning the unlearned no-MTL model ---")
