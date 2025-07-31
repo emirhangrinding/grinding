@@ -6,39 +6,33 @@ from torch.utils.data import DataLoader, Subset
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, MultiTaskDataset, transform_test_cifar
 from models import MTL_Two_Heads_ResNet
-from ssd import ssd_unlearn_subset
 from finetune import finetune_model
 from torchvision.datasets import CIFAR10
 
 def main():
     """
-    Runs the unlearning and fine-tuning workflow for an MTL model with optimized hyperparameters.
+    Runs the fine-tuning workflow for an MTL model from a pre-unlearned state.
     """
-    print("Starting the MTL unlearning and fine-tuning workflow with optimized parameters...")
-
-    # Optimized hyperparameters for MTL
-    alpha = 2.80069532231228
-    lambda_ = 2.6653773171952015
+    print("Starting the MTL fine-tuning workflow from a pre-unlearned model...")
 
     # Define model paths
-    baseline_model_path = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
-    unlearned_model_path = "unlearned_model_mtl_optimal.h5"
+    unlearned_model_path = "/kaggle/input/unlearned/pytorch/default/1/unlearned_model_mtl.h5"
 
     # Setup device and seed
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_global_seed(SEED_DEFAULT)
     print(f"Using device: {device}")
 
-    # Load baseline model
+    # Load pre-unlearned model
     num_clients = 10
     model = MTL_Two_Heads_ResNet(dataset_name="CIFAR10", num_clients=num_clients, head_size="medium")
     try:
-        model.load_state_dict(torch.load(baseline_model_path, map_location=device))
+        model.load_state_dict(torch.load(unlearned_model_path, map_location=device))
         model.to(device)
         model.eval()
-        print(f"✓ Successfully loaded baseline model from {baseline_model_path}")
+        print(f"✓ Successfully loaded pre-unlearned model from {unlearned_model_path}")
     except Exception as e:
-        print(f"✗ Error loading baseline model: {e}")
+        print(f"✗ Error loading pre-unlearned model: {e}")
         return
 
     # Generate data
@@ -69,25 +63,11 @@ def main():
     test_base = CIFAR10(root="./data", train=False, download=True, transform=transform_test_cifar)
     test_loader = DataLoader(test_base, batch_size=128, shuffle=False)
 
-    # Step 1: Run SSD unlearning with optimized parameters
-    print("\n--- Step 1: Running SSD unlearning for MTL model with optimized parameters ---")
-    
-    unlearned_model, _ = ssd_unlearn_subset(
-        pretrained_model=model,
-        retain_loader=retain_loader,
-        forget_loader=forget_loader,
-        target_subset_id=target_client_id,  # For MTL
-        device=device,
-        selection_weighting=alpha,
-        dampening_constant=lambda_,
-        calculate_fisher_on="subset"
-    )
-
-    # Step 2: Fine-tune the unlearned model
-    print("\n--- Step 2: Fine-tuning the unlearned MTL model ---")
+    # Fine-tune the unlearned model
+    print("\n--- Fine-tuning the unlearned MTL model ---")
     
     finetuned_model = finetune_model(
-        model=unlearned_model,
+        model=model,
         is_mtl=True,
         retain_loader=retain_loader,
         forget_loader=forget_loader,
@@ -98,14 +78,14 @@ def main():
     )
 
     # Save the fine-tuned model
-    finetuned_model_path = unlearned_model_path.replace(".h5", "_finetuned.h5")
+    finetuned_model_path = "finetuned_model_mtl.h5"
     try:
         torch.save(finetuned_model.state_dict(), finetuned_model_path)
         print(f"✓ Successfully saved fine-tuned model to {finetuned_model_path}")
     except Exception as e:
         print(f"✗ Error saving fine-tuned model: {e}")
         
-    print("\nMTL unlearning and fine-tuning workflow completed successfully!")
+    print("\nMTL fine-tuning workflow completed successfully!")
 
 if __name__ == "__main__":
     main() 
