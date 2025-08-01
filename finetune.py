@@ -81,6 +81,10 @@ def finetune_model(
         # Unfreeze the subset_head
         for param in model.subset_head.parameters():
             param.requires_grad = True
+
+        # Unfreeze the digit_head as well
+        for param in model.digit_head.parameters():
+            param.requires_grad = True
         
         # Unfreeze the final layer of the ResNet encoder
         for param in model.resnet.layer4.parameters():
@@ -109,6 +113,9 @@ def finetune_model(
             # Set the subset head to train mode
             model.subset_head.train()
             
+            # Set the digit head to train mode
+            model.digit_head.train()
+
             # Set the final encoder layer's BatchNorm layers to train mode
             for module in model.resnet.layer4.modules():
                 if isinstance(module, nn.BatchNorm2d):
@@ -125,10 +132,14 @@ def finetune_model(
             optimizer.zero_grad()
             
             if is_mtl:
-                inputs, _, subset_labels = batch
-                inputs, subset_labels = inputs.to(device), subset_labels.to(device)
-                _, subset_logits, _ = model(inputs)
-                loss = criterion(subset_logits, subset_labels)
+                inputs, labels, subset_labels = batch
+                inputs, labels, subset_labels = inputs.to(device), labels.to(device), subset_labels.to(device)
+                
+                digit_logits, subset_logits, _ = model(inputs)
+                
+                loss_digit = criterion(digit_logits, labels)
+                loss_subset = criterion(subset_logits, subset_labels)
+                loss = loss_digit + loss_subset  # Joint loss
             else: # No-MTL
                 inputs, labels = batch
                 inputs, labels = inputs.to(device), labels.to(device)
