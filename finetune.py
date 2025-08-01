@@ -62,6 +62,7 @@ def finetune_model(
     target_client_id,
     epochs=10,
     lr=1e-4,
+    lambda_forget=0.5,  # Weight for the adversarial forget loss
     seed=42,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ):
@@ -105,6 +106,10 @@ def finetune_model(
     optimizer = optim.Adam(params_to_tune, lr=lr)
     criterion = nn.CrossEntropyLoss()
 
+    # Initialize an iterator for the forget_loader for use in the adversarial loss
+    if is_mtl:
+        forget_loader_iter = iter(forget_loader)
+
     for epoch in range(epochs):
         if is_mtl:
             # Set the entire model to eval mode first to freeze all BatchNorm layers
@@ -126,20 +131,38 @@ def finetune_model(
                 model.feature_proj.train()
         else:
             model.train()
-        
+
         running_loss = 0.0
+        
         for batch in retain_loader:
             optimizer.zero_grad()
             
             if is_mtl:
-                inputs, labels, subset_labels = batch
-                inputs, labels, subset_labels = inputs.to(device), labels.to(device), subset_labels.to(device)
+                # For MTL, we use an adversarial loss, requiring both retain and forget data
+                try:
+                    forget_batch = next(forget_loader_iter)
+                except StopIteration:
+                    # Replenish the iterator when it's exhausted
+                    forget_loader_iter = iter(forget_loader)
+                    forget_batch = next(forget_loader_iter)
+
+                # --- Retain Set Loss (Encourage Learning) ---
+                inputs_r, labels_r, subset_labels_r = batch
+                inputs_r, labels_r, subset_labels_r = inputs_r.to(device), labels_r.to(device), subset_labels_r.to(device)
+                digit_logits_r, subset_logits_r, _ = model(inputs_r)
+                loss_digit_r = criterion(digit_logits_r, labels_r)
+                loss_subset_r = criterion(subset_logits_r, subset_labels_r)
+                retain_loss = loss_digit_r + loss_subset_r
+
+                # --- Forget Set Loss (Adversarial: Encourage Forgetting) ---
+                inputs_f, labels_f, _ = forget_batch
+                inputs_f, labels_f = inputs_f.to(device), labels_f.to(device)
+                digit_logits_f, _, _ = model(inputs_f)
+                forget_loss = criterion(digit_logits_f, labels_f)
+
+                # --- Combined Loss ---
+                loss = retain_loss - (lambda_forget * forget_loss)
                 
-                digit_logits, subset_logits, _ = model(inputs)
-                
-                loss_digit = criterion(digit_logits, labels)
-                loss_subset = criterion(subset_logits, subset_labels)
-                loss = loss_digit + loss_subset  # Joint loss
             else: # No-MTL
                 inputs, labels = batch
                 inputs, labels = inputs.to(device), labels.to(device)
@@ -148,8 +171,8 @@ def finetune_model(
 
             loss.backward()
             optimizer.step()
-            running_loss += loss.item() * inputs.size(0)
-        
+            running_loss += loss.item() * batch[0].size(0)
+
         epoch_loss = running_loss / len(retain_loader.dataset)
         print(f"Fine-tuning Epoch {epoch+1}/{epochs}, Loss on Retain Set: {epoch_loss:.4f}")
 
