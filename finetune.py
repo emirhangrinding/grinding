@@ -62,7 +62,7 @@ def finetune_model(
     target_client_id,
     epochs=10,
     lr=1e-4,
-    lambda_forget=0.05,  # Weight for the adversarial forget loss
+    lambda_forget=0.01,  # Weight for the adversarial forget loss
     seed=42,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ):
