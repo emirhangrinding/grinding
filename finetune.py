@@ -84,6 +84,14 @@ def finetune_model(
     optimizer = optim.Adam(params_to_tune, lr=lr)
     criterion = nn.CrossEntropyLoss()
 
+    # Add a learning rate scheduler for faster convergence
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=lr * 10,  # A common practice is to set max_lr to 10x the initial LR
+        steps_per_epoch=len(retain_loader),
+        epochs=epochs,
+    )
+
     # If MTL, set requires_grad appropriately once before the loop
     if is_mtl:
         for param in model.parameters():
@@ -116,6 +124,7 @@ def finetune_model(
 
             loss.backward()
             optimizer.step()
+            scheduler.step()  # Update the learning rate
             running_loss += loss.item() * inputs.size(0)
         
         epoch_loss = running_loss / len(retain_loader.dataset)
