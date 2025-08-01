@@ -84,14 +84,20 @@ def finetune_model(
     optimizer = optim.Adam(params_to_tune, lr=lr)
     criterion = nn.CrossEntropyLoss()
 
+    # If MTL, set requires_grad appropriately once before the loop
+    if is_mtl:
+        for param in model.parameters():
+            param.requires_grad = False
+        for name, param in model.named_parameters():
+            if name.startswith("subset_head."):
+                param.requires_grad = True
+
     for epoch in range(epochs):
-        model.train()
         if is_mtl:
-            for param in model.parameters():
-                param.requires_grad = False
-            for name, param in model.named_parameters():
-                if name.startswith("subset_head."):
-                    param.requires_grad = True
+            model.eval()
+            model.subset_head.train()
+        else:
+            model.train()
         
         running_loss = 0.0
         for batch in retain_loader:
