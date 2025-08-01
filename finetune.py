@@ -72,11 +72,28 @@ def finetune_model(
     model.to(device)
 
     if is_mtl:
-        print("\n--- Fine-tuning subset head for MTL model ---")
-        params_to_tune = [param for name, param in model.named_parameters() if name.startswith("subset_head.")]
-        if not params_to_tune:
-            print("Warning: No parameters found for subset head. Skipping fine-tuning.")
-            return model
+        print("\n--- Fine-tuning subset head and encoder's final layers for MTL model ---")
+        
+        # Freeze all parameters initially
+        for param in model.parameters():
+            param.requires_grad = False
+            
+        # Unfreeze the subset_head
+        for param in model.subset_head.parameters():
+            param.requires_grad = True
+        
+        # Unfreeze the final layer of the ResNet encoder
+        for param in model.resnet.layer4.parameters():
+            param.requires_grad = True
+            
+        # Unfreeze the feature projection layer if it exists
+        if model.feature_proj is not None:
+            for param in model.feature_proj.parameters():
+                param.requires_grad = True
+        
+        # Collect all parameters that need gradients
+        params_to_tune = [p for p in model.parameters() if p.requires_grad]
+
     else: # No-MTL
         print("\n--- Fine-tuning entire model for no-MTL model ---")
         params_to_tune = model.parameters()
@@ -84,26 +101,22 @@ def finetune_model(
     optimizer = optim.Adam(params_to_tune, lr=lr)
     criterion = nn.CrossEntropyLoss()
 
-    # Add a learning rate scheduler for faster convergence
-    scheduler = optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=lr * 10,  # A common practice is to set max_lr to 10x the initial LR
-        steps_per_epoch=len(retain_loader),
-        epochs=epochs,
-    )
-
-    # If MTL, set requires_grad appropriately once before the loop
-    if is_mtl:
-        for param in model.parameters():
-            param.requires_grad = False
-        for name, param in model.named_parameters():
-            if name.startswith("subset_head."):
-                param.requires_grad = True
-
     for epoch in range(epochs):
         if is_mtl:
+            # Set the entire model to eval mode first to freeze all BatchNorm layers
             model.eval()
+            
+            # Set the subset head to train mode
             model.subset_head.train()
+            
+            # Set the final encoder layer's BatchNorm layers to train mode
+            for module in model.resnet.layer4.modules():
+                if isinstance(module, nn.BatchNorm2d):
+                    module.train()
+
+            # Set the feature projection layer to train mode if it exists
+            if model.feature_proj is not None:
+                model.feature_proj.train()
         else:
             model.train()
         
@@ -124,7 +137,6 @@ def finetune_model(
 
             loss.backward()
             optimizer.step()
-            scheduler.step()  # Update the learning rate
             running_loss += loss.item() * inputs.size(0)
         
         epoch_loss = running_loss / len(retain_loader.dataset)
