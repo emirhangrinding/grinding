@@ -62,7 +62,8 @@ def finetune_model(
     target_client_id,
     epochs=10,
     lr=1e-4,
-    lambda_forget=0.03,  # Weight for the adversarial forget loss
+    lambda_digit=0.03,  # Weight for the adversarial digit loss
+    lambda_subset=0.03, # Weight for the adversarial subset ID loss
     seed=42,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ):
@@ -155,13 +156,16 @@ def finetune_model(
                 retain_loss = loss_digit_r + loss_subset_r
 
                 # --- Forget Set Loss (Adversarial: Encourage Forgetting) ---
-                inputs_f, labels_f, _ = forget_batch
-                inputs_f, labels_f = inputs_f.to(device), labels_f.to(device)
-                digit_logits_f, _, _ = model(inputs_f)
-                forget_loss = criterion(digit_logits_f, labels_f)
+                inputs_f, labels_f, subset_labels_f = forget_batch
+                inputs_f, labels_f, subset_labels_f = inputs_f.to(device), labels_f.to(device), subset_labels_f.to(device)
+                
+                digit_logits_f, subset_logits_f, _ = model(inputs_f)
+                
+                digit_loss_f = criterion(digit_logits_f, labels_f)
+                subset_loss_f = criterion(subset_logits_f, subset_labels_f)
 
                 # --- Combined Loss ---
-                loss = retain_loss - (lambda_forget * forget_loss)
+                loss = retain_loss - (lambda_digit * digit_loss_f) - (lambda_subset * subset_loss_f)
                 
             else: # No-MTL
                 inputs, labels = batch
