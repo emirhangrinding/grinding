@@ -62,8 +62,8 @@ def finetune_model(
     target_client_id,
     epochs=10,
     lr=1e-4,
-    lambda_digit=0.03,  # Weight for the adversarial digit loss
-    lambda_subset=0.03, # Weight for the adversarial subset ID loss
+    lambda_digit=0.05,  # Weight for the adversarial digit loss
+    lambda_subset=0.05, # Weight for the adversarial subset ID loss
     seed=42,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ):
