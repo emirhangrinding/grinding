@@ -18,7 +18,7 @@ def learn_baseline_no_mtl(
     dataset_name: str = "CIFAR10",
     setting: str = "non-iid",
     num_clients: int = 10,
-    excluded_client_id: int = 0,
+    excluded_client_ids: list[int] = [0],
     batch_size: int = 64,
     num_epochs: int = 200,
     data_root: str = "./data",
@@ -29,16 +29,17 @@ def learn_baseline_no_mtl(
 ):
     """Train a baseline model on *all but one* client without MTL.
 
-    The data from the `excluded_client_id` (0-indexed) is **not** used for
+    The data from the `excluded_client_ids` is **not** used for
     training or validation. After training, the routine evaluates the model on
-    the held-out client (target subset) versus the remaining clients as well as
+    the held-out clients (target subsets) versus the remaining clients as well as
     on the official test split. All metrics are printed for comparison.
     """
 
     # Setup
-    assert 0 <= excluded_client_id < num_clients, (
-        f"excluded_client_id must be in [0, {num_clients-1}]"
-    )
+    for client_id in excluded_client_ids:
+        assert 0 <= client_id < num_clients, (
+            f"excluded_client_id must be in [0, {num_clients-1}]"
+        )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -54,11 +55,11 @@ def learn_baseline_no_mtl(
         data_root=data_root,
     )
 
-    excluded_key = f"client{excluded_client_id + 1}"
+    excluded_keys = {f"client{i + 1}" for i in excluded_client_ids}
     
     included_indices = []
     for k, v in clients_data.items():
-        if k != excluded_key:
+        if k not in excluded_keys:
             included_indices.extend(v)
 
     # Dataset **without** the excluded client
@@ -87,14 +88,18 @@ def learn_baseline_no_mtl(
     model = model_class(dataset_name=dataset_name)
 
     # Create target subset loader for evaluation during training
-    target_subset_dataset = Subset(full_dataset, clients_data[excluded_key])
+    excluded_datasets = [
+        Subset(full_dataset, clients_data[f"client{i + 1}"])
+        for i in excluded_client_ids
+    ]
+    target_subset_dataset = ConcatDataset(excluded_datasets)
     target_subset_loader = DataLoader(target_subset_dataset, batch_size=batch_size)
     
     # Create training evaluation loader (for the included clients)
     training_eval_loader = DataLoader(train_dataset, batch_size=batch_size)
 
     print(
-        f"\n[BASELINE] Training on {num_clients-1} clients (excluding client {excluded_client_id})"
+        f"\n[BASELINE] Training on {num_clients - len(excluded_client_ids)} clients (excluding clients {excluded_client_ids})"
     )
     model, history = train_single_head_with_eval(
         model=model,
@@ -139,4 +144,17 @@ def learn_baseline_no_mtl(
         "train_digit_oth": train_digit_acc,
         "test_digit_acc": test_digit_acc,
         "mia_score": mia_score,
-    } 
+    }
+
+def learn_baseline_no_mtl_excluding_2_clients(
+    **kwargs,
+):
+    """Wrapper to exclude 2 clients."""
+    return learn_baseline_no_mtl(excluded_client_ids=[0, 1], **kwargs)
+
+
+def learn_baseline_no_mtl_excluding_3_clients(
+    **kwargs,
+):
+    """Wrapper to exclude 3 clients."""
+    return learn_baseline_no_mtl(excluded_client_ids=[0, 1, 2], **kwargs)
