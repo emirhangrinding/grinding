@@ -150,7 +150,7 @@ def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=No
     if weights is None:
         # Default equal weights for all metrics
         weights = {
-            'target_digit_acc': 2.0,
+            'target_digit_acc': 3.0,
             'other_digit_acc': 1.0, 
             'target_subset_acc': 1.0,
             'other_subset_acc': 1.0,
