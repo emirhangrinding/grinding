@@ -60,7 +60,7 @@ def finetune_model(
     forget_loader,
     test_loader,
     target_client_id,
-    epochs=10,
+    epochs=1,
     lr=1e-4,
     lambda_digit=0.07,  # Weight for the adversarial digit loss
     lambda_subset=0.03, # Weight for the adversarial subset ID loss
