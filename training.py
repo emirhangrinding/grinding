@@ -76,7 +76,10 @@ def train_mtl_two_heads(model, train_loader, test_loader, device,
             # Track metrics
             train_digit_loss += digit_loss.item() * inputs.size(0)
             train_subset_loss += subset_loss.item() * inputs.size(0)
-            train_loss_dis += loss_dis.item() * inputs.size(0)
+            if isinstance(loss_dis, torch.Tensor):
+                train_loss_dis += loss_dis.item() * inputs.size(0)
+            else:
+                train_loss_dis += loss_dis * inputs.size(0)
 
             # Calculate accuracies
             _, digit_preds = torch.max(digit_logits, 1)
