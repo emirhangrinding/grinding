@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.metrics import accuracy_score
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 def calculate_digit_classification_accuracy(model, data_loader, device, target_subset_id: Optional[int]) -> Tuple[float, float]:
     """
@@ -155,6 +155,63 @@ def calculate_subset_identification_accuracy(model, data_loader, device, target_
 
     return target_accuracy, other_accuracy
 
+def calculate_subset_identification_accuracy_multiple_targets(model, data_loader, device, target_subset_ids: Optional[List[int]]) -> Tuple[float, float]:
+    """
+    Calculate subset identification accuracy for multiple target subsets and other subsets.
+    
+    Args:
+        model: The model to evaluate
+        data_loader: DataLoader containing the evaluation data
+        device: Device to run evaluation on
+        target_subset_ids: IDs of the target subsets to evaluate, or None for no-MTL models
+        
+    Returns:
+        Tuple of (target_accuracy, other_accuracy)
+        For no-MTL models, target_accuracy will be 0.0 and other_accuracy will be the overall accuracy
+    """
+    model.eval()
+    target_correct = 0
+    other_correct = 0
+    target_samples = 0
+    other_samples = 0
+
+    with torch.no_grad():
+        for batch in data_loader:
+            if len(batch) == 3:
+                inputs, _, subset_labels = batch
+            else:
+                inputs, _ = batch
+                subset_labels = torch.zeros_like(_)
+            
+            inputs, subset_labels = inputs.to(device), subset_labels.to(device)
+            
+            model_outputs = model(inputs)
+            if isinstance(model_outputs, tuple):
+                _, subset_logits, _ = model_outputs
+                _, subset_preds = torch.max(subset_logits, 1)
+            else:
+                subset_preds = torch.zeros_like(subset_labels)
+
+            if target_subset_ids is None:
+                target_mask = torch.zeros_like(subset_labels, dtype=torch.bool)
+                other_mask = torch.ones_like(subset_labels, dtype=torch.bool)
+            else:
+                target_mask = torch.zeros_like(subset_labels, dtype=torch.bool)
+                for target_id in target_subset_ids:
+                    target_mask |= (subset_labels == target_id)
+                other_mask = ~target_mask
+
+            target_correct += (subset_preds[target_mask] == subset_labels[target_mask]).sum().item()
+            other_correct += (subset_preds[other_mask] == subset_labels[other_mask]).sum().item()
+
+            target_samples += target_mask.sum().item()
+            other_samples += other_mask.sum().item()
+
+    target_accuracy = target_correct / target_samples if target_samples > 0 else 0.0
+    other_accuracy = other_correct / other_samples if other_samples > 0 else 0.0
+
+    return target_accuracy, other_accuracy
+
 def calculate_overall_digit_classification_accuracy(model, data_loader, device):
     """Calculate digit classification accuracy across the entire loader (all subsets combined)."""
     model.eval()
@@ -260,4 +317,4 @@ def get_membership_attack_prob_train_only(retain_loader, forget_loader, model):
 
     # Compute overall accuracy and convert to percentage
     accuracy = accuracy_score(y, y_pred) * 100.0
-    return accuracy 
+    return accuracy
