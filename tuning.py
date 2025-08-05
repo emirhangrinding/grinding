@@ -17,47 +17,55 @@ def optimise_ssd_hyperparams(
     n_trials: int = 25,
     seed: int = 49,
     calculate_fisher_on: str = "subset",
+    num_forgotten_clients: int = 1,
+    unlearned_model_name: str = "unlearned_model"
 ):
     """Run TPE search to tune SSD hyper-parameters α (exponent) and λ (dampening_constant).
-
-    For MTL case (target_subset_id is not None):
-        The optimisation minimises the distance to baseline metrics:
-        • target_digit_acc: 0.9056
-        • other_digit_acc: 0.9998
-        • target_subset_acc: 0.0000
-        • test_digit_acc: 0.9130
-
-    For no-MTL case (target_subset_id is None):
-        The optimisation minimises the distance to baseline metrics:
-        • target_digit_acc: 0.9000 (Train accuracy on target subset)
-        • other_digit_acc: 0.9900 (Train accuracy on other subsets)  
-        • test_digit_acc: 0.9100 (Test Accuracy)
-
-    The objective minimises the weighted absolute difference between current metrics
-    and baseline metrics. Lower score ⇒ closer to baseline performance.
+    The optimisation minimises the distance to baseline metrics based on the number of forgotten clients.
+    Lower score ⇒ closer to baseline performance.
     """
 
     # Check if this is the no-MTL case
     is_no_mtl = (target_subset_id is None)
     
     if is_no_mtl:
-        # No-MTL baseline metrics (from train_baseline_all_no_mtl.py results)
-        BASELINE_METRICS_TUNING = {
-            'target_digit_acc': 0.8902,  # Accuracy on target subset 
-            'other_digit_acc': 0.9999,   # Accuracy on other subsets (training data)
-            'test_digit_acc': 0.9061,    # Test accuracy
-        }
+        if num_forgotten_clients == 1:
+            # No-MTL baseline metrics (1 client forgotten)
+            BASELINE_METRICS_TUNING = {
+                'target_digit_acc': 0.8902,  # Accuracy on target subset 
+                'other_digit_acc': 0.9999,   # Accuracy on other subsets (training data)
+                'test_digit_acc': 0.9061,    # Test accuracy
+            }
+        elif num_forgotten_clients == 2:
+            # No-MTL baseline metrics (2 clients forgotten)
+            BASELINE_METRICS_TUNING = {
+                'target_digit_acc': 0.8729,  # Accuracy on target subset 
+                'other_digit_acc': 1.0000,   # Accuracy on other subsets (training data)
+                'test_digit_acc': 0.8931,    # Test accuracy
+            }
+        else:
+            raise ValueError(f"Unsupported num_forgotten_clients for no-MTL: {num_forgotten_clients}")
     else:
-        # MTL baseline metrics (from baseline.py results)  
-        BASELINE_METRICS_TUNING = {
-            'target_digit_acc': 0.8956,  # Accuracy on target subset
-            'other_digit_acc': 0.9998,   # Accuracy on other subsets
-            #'target_subset_acc': 0.0000, # Subset ID accuracy on target (should be 0 after unlearning)
-            'other_subset_acc': 0.9974,  # Subset ID accuracy on other subsets
-            'test_digit_acc': 0.9130,    # Test accuracy
-        }
+        if num_forgotten_clients == 1:
+            # MTL baseline metrics (1 client forgotten)
+            BASELINE_METRICS_TUNING = {
+                'target_digit_acc': 0.8956,  # Accuracy on target subset
+                'other_digit_acc': 0.9998,   # Accuracy on other subsets
+                'other_subset_acc': 0.9974,  # Subset ID accuracy on other subsets
+                'test_digit_acc': 0.9130,    # Test accuracy
+            }
+        elif num_forgotten_clients == 2:
+            # MTL baseline metrics (2 clients forgotten)
+            BASELINE_METRICS_TUNING = {
+                'target_digit_acc': 0.8906,  # Accuracy on target subset
+                'other_digit_acc': 0.9999,   # Accuracy on other subsets
+                'other_subset_acc': 0.9985,  # Subset ID accuracy on other subsets
+                'test_digit_acc': 0.9052,    # Test accuracy 
+            }
+        else:
+            raise ValueError(f"Unsupported num_forgotten_clients for MTL: {num_forgotten_clients}")
 
-    print(f"Optimising SSD hyperparameters ({'no-MTL' if is_no_mtl else 'MTL'} case)")
+    print(f"Optimising SSD hyperparameters ({'no-MTL' if is_no_mtl else 'MTL'} case, for client {target_subset_id} ({num_forgotten_clients} forgotten total))")
     print(f"Target baseline metrics: {BASELINE_METRICS_TUNING}")
 
     # Set up Optuna sampler with fixed seed for reproducibility
@@ -158,7 +166,7 @@ def optimise_ssd_hyperparams(
     final_model = pretrained_model
     final_model.load_state_dict(torch.load(best_model_state, map_location=device))
     
-    output_filename = "unlearned_model_mtl.h5" if not is_no_mtl else "unlearned_model_no_mtl.h5"
+    output_filename = f"{unlearned_model_name}.h5"
     torch.save(final_model.state_dict(), output_filename)
     print(f"\n✓ Best unlearned model saved to: {output_filename}")
 

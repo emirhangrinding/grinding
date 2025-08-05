@@ -22,8 +22,10 @@ HEAD_SIZE = "medium"
 SEED = 42
 
 # Setup
-parser = argparse.ArgumentParser(description="Run SSD tuning for an MTL ResNet model.")
 parser.add_argument("--model-path", type=str, required=True, help="Path to the baseline MTL model file.")
+parser.add_argument("--target-subset-id", type=int, default=TARGET_SUBSET_ID, help="The ID of the client to forget.")
+parser.add_argument("--num-forgotten-clients", type=int, default=1, help="The number of clients that have been forgotten so far (including the current one).")
+parser.add_argument("--unlearned-model-name", type=str, default="unlearned_model_mtl", help="Name for the output unlearned model file.")
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -48,7 +50,7 @@ train_indices = indices[:train_size]
 
 train_dataset = Subset(mtl_dataset, train_indices)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-retain_loader, forget_loader = create_subset_data_loaders(train_loader, TARGET_SUBSET_ID)
+retain_loader, forget_loader = create_subset_data_loaders(train_loader, args.target_subset_id)
 
 # Test loader
 if DATASET_NAME == "MNIST":
@@ -86,9 +88,11 @@ study = optimise_ssd_hyperparams(
     forget_loader=forget_loader,
     test_loader=test_loader,
     device=device,
-    target_subset_id=TARGET_SUBSET_ID,
+    target_subset_id=args.target_subset_id,
     n_trials=N_TRIALS,
-    seed=SEED
+    seed=SEED,
+    num_forgotten_clients=args.num_forgotten_clients,
+    unlearned_model_name=args.unlearned_model_name,
 )
 
 print(f"Best α: {study.best_params['alpha']:.6f}")

@@ -20,8 +20,10 @@ DATA_ROOT = "./data"
 SEED = 42
 
 # Setup
-parser = argparse.ArgumentParser(description="Run SSD tuning for a standard ResNet model.")
 parser.add_argument("--model-path", type=str, required=True, help="Path to the baseline model file.")
+parser.add_argument("--target-subset-id", type=int, default=TARGET_SUBSET_ID, help="The ID of the client to forget.")
+parser.add_argument("--num-forgotten-clients", type=int, default=1, help="The number of clients that have been forgotten so far (including the current one).")
+parser.add_argument("--unlearned-model-name", type=str, default="unlearned_model_no_mtl", help="Name for the output unlearned model file.")
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -36,7 +38,7 @@ clients_data, _, full_dataset = generate_subdatasets(
 )
 
 # Create retain and forget loaders
-target_client_key = f"client{TARGET_SUBSET_ID + 1}"
+target_client_key = f"client{args.target_subset_id + 1}"
 forget_indices = clients_data[target_client_key]
 
 retain_indices = []
@@ -73,7 +75,9 @@ study = optimise_ssd_hyperparams(
     device=device,
     target_subset_id=None,  # Not needed for single-head model
     n_trials=N_TRIALS,
-    seed=SEED
+    seed=SEED,
+    num_forgotten_clients=args.num_forgotten_clients,
+    unlearned_model_name=args.unlearned_model_name,
 )
 
 print(f"Best α: {study.best_params['alpha']:.6f}")
