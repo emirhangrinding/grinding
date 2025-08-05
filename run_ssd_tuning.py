@@ -22,6 +22,7 @@ HEAD_SIZE = "medium"
 SEED = 42
 
 # Setup
+parser = argparse.ArgumentParser(description="Run SSD tuning for an MTL ResNet model.")
 parser.add_argument("--model-path", type=str, required=True, help="Path to the baseline MTL model file.")
 parser.add_argument("--target-subset-id", type=int, default=TARGET_SUBSET_ID, help="The ID of the client to forget.")
 parser.add_argument("--num-forgotten-clients", type=int, default=1, help="The number of clients that have been forgotten so far (including the current one).")
