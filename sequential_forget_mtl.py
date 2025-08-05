@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Subset
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, MultiTaskDataset, create_subset_data_loaders
 from models import MTL_Two_Heads_ResNet
-from finetune import finetune_model
+from finetune import finetune_model, evaluate_and_print_metrics
 from torchvision.datasets import MNIST, CIFAR10
 from data import transform_mnist, transform_test_cifar
 
@@ -85,24 +85,16 @@ def run_sequential_forgetting(
                 print(f"--- Error running {tune_script} for client {client_id}: {e} ---")
                 return
 
-        # --- 2. Fine-tuning ---
-        print(f"\n--- Fine-tuning after forgetting client {client_id} ---")
-
+        # --- 2. Evaluation & Fine-tuning ---
+        
         # Update the list of forgotten clients for the next stage
-        forgotten_clients.append(client_id)
+        # This is done *before* creating dataloaders to ensure correct data exclusion
+        if client_id not in forgotten_clients:
+            forgotten_clients.append(client_id)
         
         # Create data loaders that EXCLUDE all previously forgotten clients
-        # The `create_subset_data_loaders` needs to be adapted or we need to filter here
-        
-        # Let's create the loaders manually for fine-tuning
-        # This ensures we only use data from clients that are still "active"
-        
-        # Retain indices are from clients not in `forgotten_clients`
-        # Forget indices are only from the current `client_id` for the purpose of the function call
-        
         all_indices = []
         for c_id, indices in clients_data.items():
-            # c_id is "client1", "client2", etc.
             numeric_id = int(c_id.replace("client", "")) - 1
             if numeric_id not in forgotten_clients:
                  all_indices.extend(indices)
@@ -112,7 +104,7 @@ def run_sequential_forgetting(
         retain_dataset = Subset(mtl_dataset, all_indices)
         retain_loader = DataLoader(retain_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-        # The 'forget_loader' for fine-tuning should be for the client *just* forgotten
+        # The 'forget_loader' should contain data for the client *just* forgotten
         forget_indices = clients_data[f"client{client_id + 1}"]
         forget_dataset = Subset(mtl_dataset, forget_indices)
         forget_loader = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -120,8 +112,22 @@ def run_sequential_forgetting(
         # Load the unlearned model
         model_to_finetune = MTL_Two_Heads_ResNet(dataset_name=DATASET_NAME, num_clients=NUM_CLIENTS, head_size=HEAD_SIZE)
         model_to_finetune.load_state_dict(torch.load(unlearned_model_path, map_location=device))
-        
+        model_to_finetune.to(device)
+
+        # Evaluate metrics *before* fine-tuning
+        print(f"\n--- Metrics BEFORE fine-tuning (after unlearning client {client_id}) ---")
+        evaluate_and_print_metrics(
+            model=model_to_finetune,
+            is_mtl=IS_MTL,
+            retain_loader=retain_loader,
+            forget_loader=forget_loader, 
+            test_loader=test_loader,
+            device=device,
+            target_client_id=client_id
+        )
+
         # Fine-tune the model
+        print(f"\n--- Fine-tuning after forgetting client {client_id} ---")
         finetuned_model = finetune_model(
             model=model_to_finetune,
             is_mtl=IS_MTL,

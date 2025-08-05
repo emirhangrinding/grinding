@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Subset
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets
 from models import StandardResNet
-from finetune import finetune_model
+from finetune import finetune_model, evaluate_and_print_metrics
 from torchvision.datasets import MNIST, CIFAR10
 from data import transform_mnist, transform_test_cifar
 
@@ -83,10 +83,9 @@ def run_sequential_forgetting_no_mtl(
                 print(f"--- Error running {tune_script} for client {client_id}: {e} ---")
                 return
 
-        # --- 2. Fine-tuning ---
-        print(f"\n--- Fine-tuning after forgetting client {client_id} (no-MTL) ---")
-
-        forgotten_clients.append(client_id)
+        # --- 2. Evaluation & Fine-tuning ---
+        if client_id not in forgotten_clients:
+            forgotten_clients.append(client_id)
         
         # Create data loaders that EXCLUDE all previously forgotten clients
         retain_indices = []
@@ -106,8 +105,22 @@ def run_sequential_forgetting_no_mtl(
         # Load the unlearned model
         model_to_finetune = StandardResNet(dataset_name=DATASET_NAME)
         model_to_finetune.load_state_dict(torch.load(unlearned_model_path, map_location=device))
+        model_to_finetune.to(device)
+
+        # Evaluate metrics *before* fine-tuning
+        print(f"\n--- Metrics BEFORE fine-tuning (after unlearning client {client_id}) ---")
+        evaluate_and_print_metrics(
+            model=model_to_finetune,
+            is_mtl=IS_MTL,
+            retain_loader=retain_loader,
+            forget_loader=forget_loader,
+            test_loader=test_loader,
+            device=device,
+            target_client_id=client_id
+        )
         
         # Fine-tune the model
+        print(f"\n--- Fine-tuning after forgetting client {client_id} (no-MTL) ---")
         finetuned_model = finetune_model(
             model=model_to_finetune,
             is_mtl=IS_MTL,
