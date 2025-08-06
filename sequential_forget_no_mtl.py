@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader, Subset
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets
 from models import StandardResNet
-from finetune import finetune_model, evaluate_and_print_metrics
+from finetune import finetune_model
+from evaluation import evaluate_and_print_metrics
 from torchvision.datasets import MNIST, CIFAR10
 from data import transform_mnist, transform_test_cifar
 
