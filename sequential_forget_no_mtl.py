@@ -146,7 +146,7 @@ if __name__ == "__main__":
     clients_to_forget_seq = [0, 1] 
     
     baseline_model = "/kaggle/input/no-mtl/pytorch/default/1/baseline_all_clients_model.h5"
-    initial_unlearned_model = "/kaggle/input/unlearned/pytorch/default/1/unlearned_model_no_mtl.h5"
+    initial_unlearned_model = "/kaggle/input/unlearned-no-mtl/pytorch/default/1/unlearned_model_no_mtl.h5"
 
 
     run_sequential_forgetting_no_mtl(
