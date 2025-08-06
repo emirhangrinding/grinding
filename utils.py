@@ -134,7 +134,7 @@ def dirichlet_partition(dataset, num_clients=10, alpha=0.6, num_classes=10, seed
             client_idx.extend(split_idxs[i].tolist())
     return client_indices
 
-def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=None):
+def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=None, num_forgotten_clients=1):
     """
     Calculate how close current metrics are to baseline metrics using weighted absolute differences.
     
@@ -143,6 +143,7 @@ def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=No
                         'target_subset_acc', 'other_subset_acc', 'test_digit_acc'
         baseline_metrics: dict with same keys as current_metrics
         weights: dict with same keys for weighting different metrics (optional)
+        num_forgotten_clients: int for number of forgotten clients
     
     Returns:
         float: delta score (lower is closer to baseline)
@@ -157,6 +158,9 @@ def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=No
             'test_digit_acc': 1.0
         }
     
+    if num_forgotten_clients == 2:
+        weights['target_digit_acc'] = 1.0
+    
     delta = 0.0
     total_weight = 0.0
     
@@ -168,7 +172,7 @@ def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=No
     # Normalize by total weight to get average weighted delta
     return delta / total_weight if total_weight > 0 else float('inf')
 
-def track_best_epoch_vs_baseline(epoch, current_metrics, baseline_metrics, best_epoch_info, weights=None):
+def track_best_epoch_vs_baseline(epoch, current_metrics, baseline_metrics, best_epoch_info, weights=None, num_forgotten_clients=1):
     """
     Track which epoch produces results closest to baseline metrics.
     
@@ -178,11 +182,12 @@ def track_best_epoch_vs_baseline(epoch, current_metrics, baseline_metrics, best_
         baseline_metrics: dict of baseline metrics to compare against
         best_epoch_info: dict to store best epoch info (modified in-place)
         weights: optional dict of metric weights
+        num_forgotten_clients: int for number of forgotten clients
     
     Returns:
         tuple: (current_delta_score, is_best_so_far)
     """
-    current_delta = calculate_baseline_delta_score(current_metrics, baseline_metrics, weights)
+    current_delta = calculate_baseline_delta_score(current_metrics, baseline_metrics, weights, num_forgotten_clients)
     
     is_best = False
     if 'best_delta' not in best_epoch_info or current_delta < best_epoch_info['best_delta']:

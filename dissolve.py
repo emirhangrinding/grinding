@@ -106,6 +106,7 @@ def dissolve_unlearn_subset(
     use_subset_losses_epoch=0,
     baseline_metrics=DEFAULT_BASELINE_METRICS,
     calculate_fisher_on="subset",
+    num_forgotten_clients: int = 1,
     *, dataset_name: str = "CIFAR10", num_clients: int = 10, head_size: str = 'big'):
     """
     Unlearn subset classification using DISSOLVE method,
@@ -561,7 +562,7 @@ def dissolve_unlearn_subset(
                         'test_digit_acc': test_digit_acc if test_digit_acc is not None else 0.0
                     }
                     delta_score, is_best = track_best_epoch_vs_baseline(
-                        epoch + 1, current_metrics, baseline_metrics, best_epoch_info
+                        epoch + 1, current_metrics, baseline_metrics, best_epoch_info, num_forgotten_clients=num_forgotten_clients
                     )
                     print(f"    Delta from baseline: {delta_score:.6f}" + (" (BEST SO FAR)" if is_best else ""))
             else:

@@ -114,7 +114,9 @@ def optimise_ssd_hyperparams(
             current_metrics_tuning[key] = ssd_metrics[key]
 
         # Calculate distance to baseline metrics (lower is better)
-        delta_score = calculate_baseline_delta_score(current_metrics_tuning, BASELINE_METRICS_TUNING)
+        delta_score = calculate_baseline_delta_score(
+            current_metrics_tuning, BASELINE_METRICS_TUNING, num_forgotten_clients=num_forgotten_clients
+        )
 
         # Log trial results for debugging
         trial.set_user_attr("target_digit_acc", current_metrics_all['target_digit_acc'])
