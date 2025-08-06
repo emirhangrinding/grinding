@@ -140,6 +140,7 @@ def ssd_unlearn_subset(
     selection_weighting: float = 1.0,
     test_loader: DataLoader = None,
     calculate_fisher_on: str = "subset",
+    use_cached_unlearned_model: Optional[nn.Module] = None,
 ) -> tuple:
     """Apply Selective Synaptic Dampening (SSD) to forget a target subset.
 
@@ -149,13 +150,17 @@ def ssd_unlearn_subset(
     
     Args:
         target_subset_id: ID of target subset for MTL models, or None for no-MTL models
+        use_cached_unlearned_model: If provided, use this model instead of creating a new one.
     
     Returns:
         tuple: (unlearned_model, metrics_dict) where metrics_dict contains the calculated accuracies
     """
 
     print("\n--- Starting Selective Synaptic Dampening (SSD) Unlearning ---")
-    unlearned_model = copy.deepcopy(pretrained_model).to(device)
+    if use_cached_unlearned_model:
+        unlearned_model = use_cached_unlearned_model
+    else:
+        unlearned_model = copy.deepcopy(pretrained_model).to(device)
 
     perturber = ParameterPerturber(
         unlearned_model,
