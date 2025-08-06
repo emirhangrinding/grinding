@@ -10,8 +10,7 @@ from data import generate_subdatasets, MultiTaskDataset, transform_mnist, transf
 from models import MTL_Two_Heads_ResNet
 from tuning import optimise_ssd_hyperparams
 
-# Configuration - EDIT THESE VALUES
-# MODEL_PATH = "baseline_mtl_all_clients.h5" 
+# Configuration
 DATASET_NAME = "CIFAR10"
 TARGET_SUBSET_ID = 0
 NUM_CLIENTS = 10
@@ -27,13 +26,14 @@ parser.add_argument("--model-path", type=str, required=True, help="Path to the b
 parser.add_argument("--target-subset-id", type=int, default=TARGET_SUBSET_ID, help="The ID of the client to forget.")
 parser.add_argument("--num-forgotten-clients", type=int, default=1, help="The number of clients that have been forgotten so far (including the current one).")
 parser.add_argument("--unlearned-model-name", type=str, default="unlearned_model_mtl", help="Name for the output unlearned model file.")
+parser.add_argument("--previous-forgotten-clients", type=int, nargs='*', default=[], help="List of client IDs that were forgotten in previous rounds.")
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 set_global_seed(SEED)
 
-# Generate data (FIXED - removed seed parameter)
-clients_data, clients_labels, full_dataset = generate_subdatasets(
+# Generate data
+clients_data, _, full_dataset = generate_subdatasets(
     dataset_name=DATASET_NAME,
     setting="non-iid",
     num_clients=NUM_CLIENTS,
@@ -42,39 +42,28 @@ clients_data, clients_labels, full_dataset = generate_subdatasets(
 
 # Create datasets and loaders
 mtl_dataset = MultiTaskDataset(full_dataset, clients_data)
-dataset_size = len(mtl_dataset)
-train_size = int(0.8 * dataset_size)
-indices = list(range(dataset_size))
-# Note: Shuffling is removed to be consistent with finetune_after_ssd.py
-# random.shuffle(indices)
-train_indices = indices[:train_size]
+train_loader = DataLoader(mtl_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-train_dataset = Subset(mtl_dataset, train_indices)
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+# Create loaders for retain and the CURRENTLY forgotten client
 retain_loader, forget_loader = create_subset_data_loaders(train_loader, args.target_subset_id)
+
+# Create loaders for PREVIOUSLY forgotten clients
+all_forgotten_loaders = {}
+if args.previous_forgotten_clients:
+    print(f"Creating loaders for previously forgotten clients: {args.previous_forgotten_clients}")
+    for client_id in args.previous_forgotten_clients:
+        # We need to create a loader for each previously forgotten client.
+        # This requires isolating their data from the full dataset.
+        client_indices = clients_data[f"client{client_id + 1}"]
+        forget_dataset = Subset(mtl_dataset, client_indices)
+        all_forgotten_loaders[client_id] = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # Test loader
 if DATASET_NAME == "MNIST":
     test_base = MNIST(root=DATA_ROOT, train=False, download=True, transform=transform_mnist)
 else:
     test_base = CIFAR10(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
-
-test_class_indices = {i: [] for i in range(10)}
-for idx, (_, label) in enumerate(test_base):
-    test_class_indices[label].append(idx)
-
-test_clients_data = {k: [] for k in clients_data.keys()}
-for class_label, idxs in test_class_indices.items():
-    client_ids = [cid for cid in clients_data.keys() 
-                 if any(full_dataset[i][1] == class_label for i in clients_data[cid])]
-    if not client_ids:
-        client_ids = list(clients_data.keys())
-    for i, idx in enumerate(idxs):
-        client = client_ids[i % len(client_ids)]
-        test_clients_data[client].append(idx)
-
-test_mtl_dataset = MultiTaskDataset(test_base, test_clients_data)
-test_loader = DataLoader(test_mtl_dataset, batch_size=BATCH_SIZE)
+test_loader = DataLoader(test_base, batch_size=BATCH_SIZE, shuffle=False)
 
 # Load model
 model = MTL_Two_Heads_ResNet(dataset_name=DATASET_NAME, num_clients=NUM_CLIENTS, head_size=HEAD_SIZE)
@@ -94,6 +83,7 @@ study = optimise_ssd_hyperparams(
     seed=SEED,
     num_forgotten_clients=args.num_forgotten_clients,
     unlearned_model_name=args.unlearned_model_name,
+    all_forgotten_loaders=all_forgotten_loaders,
 )
 
 print(f"Best α: {study.best_params['alpha']:.6f}")

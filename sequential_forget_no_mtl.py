@@ -37,7 +37,7 @@ def run_sequential_forgetting_no_mtl(
     set_global_seed(SEED)
     
     current_model_path = baseline_model_path
-    forgotten_clients_ids = []
+    forgotten_clients = []
     
     # Generate the full client dataset structure once
     clients_data, _, full_dataset = generate_subdatasets(
@@ -57,12 +57,8 @@ def run_sequential_forgetting_no_mtl(
         num_forgotten = i + 1
         print(f"\n--- Stage {num_forgotten}: Forgetting client {client_id} (no-MTL) ---")
 
-        # Update the list of forgotten clients
-        if client_id not in forgotten_clients_ids:
-            forgotten_clients_ids.append(client_id)
-
         # --- 1. SSD Unlearning ---
-        unlearned_model_name = f"unlearned_model_no_mtl_forgot_{'_'.join(map(str, forgotten_clients_ids))}"
+        unlearned_model_name = f"unlearned_model_no_mtl_forgot_{'_'.join(map(str, forgotten_clients + [client_id]))}"
         unlearned_model_path = f"{unlearned_model_name}.h5"
 
         if i == 0 and initial_unlearned_model_path and os.path.exists(initial_unlearned_model_path):
@@ -70,15 +66,20 @@ def run_sequential_forgetting_no_mtl(
             print("Skipping initial SSD tuning.")
             unlearned_model_path = initial_unlearned_model_path
         elif os.path.exists(unlearned_model_path):
-            print(f"Unlearned model for clients {forgotten_clients_ids} already exists. Skipping SSD tuning.")
+            print(f"Unlearned model for client {client_id} already exists. Skipping SSD tuning.")
         else:
+            # Pass previously forgotten clients to the tuning script
+            previous_forgotten_clients = [cid for cid in forgotten_clients if cid != client_id]
+            previous_forgotten_clients_arg = " ".join(map(str, previous_forgotten_clients))
+
             tune_script = "run_ssd_tuning_no_mtl.py"
             tune_command = (
                 f"python {tune_script} "
                 f"--model-path {current_model_path} "
                 f"--target-subset-id {client_id} "
                 f"--num-forgotten-clients {num_forgotten} "
-                f"--unlearned-model-name {unlearned_model_name}"
+                f"--unlearned-model-name {unlearned_model_name} "
+                f"--previous-forgotten-clients {previous_forgotten_clients_arg}"
             )
             try:
                 subprocess.run(tune_command, shell=True, check=True)
@@ -88,27 +89,25 @@ def run_sequential_forgetting_no_mtl(
                 return
 
         # --- 2. Evaluation & Fine-tuning ---
+        if client_id not in forgotten_clients:
+            forgotten_clients.append(client_id)
         
         # Create data loaders that EXCLUDE all previously forgotten clients
         retain_indices = []
         for c_id_str, indices in clients_data.items():
             numeric_id = int(c_id_str.replace("client", "")) - 1
-            if numeric_id not in forgotten_clients_ids:
+            if numeric_id not in forgotten_clients:
                 retain_indices.extend(indices)
         
         retain_dataset = Subset(full_dataset, retain_indices)
         retain_loader = DataLoader(retain_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-        # Create a list of data loaders for ALL forgotten clients
-        forgotten_client_loaders = []
-        for cid in forgotten_clients_ids:
+        # The 'forget_loader' should contain data for all clients forgotten so far
+        forgotten_client_loaders = {}
+        for cid in forgotten_clients:
             forget_indices = clients_data[f"client{cid + 1}"]
             forget_dataset = Subset(full_dataset, forget_indices)
-            loader = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=False)
-            forgotten_client_loaders.append(loader)
-            
-        # The 'current_forget_loader' is for the client *just* forgotten in this stage
-        current_forget_loader = forgotten_client_loaders[-1]
+            forgotten_client_loaders[cid] = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=False)
         
         # Load the unlearned model
         model_to_finetune = StandardResNet(dataset_name=DATASET_NAME)
@@ -121,11 +120,10 @@ def run_sequential_forgetting_no_mtl(
             model=model_to_finetune,
             is_mtl=IS_MTL,
             retain_loader=retain_loader,
-            forgotten_client_loaders=forgotten_client_loaders,
             test_loader=test_loader,
             device=device,
-            currently_forgetting_client_id=client_id,
-            all_forgotten_client_ids=forgotten_clients_ids
+            forgotten_client_loaders=forgotten_client_loaders,
+            current_forget_client_id=client_id
         )
         
         # Fine-tune the model
@@ -134,29 +132,16 @@ def run_sequential_forgetting_no_mtl(
             model=model_to_finetune,
             is_mtl=IS_MTL,
             retain_loader=retain_loader,
-            forget_loader=current_forget_loader, # Fine-tuning still targets the current one
+            forget_loader=forgotten_client_loaders[client_id], # Pass only the current forget loader
             test_loader=test_loader,
-            target_client_id=client_id,
+            target_client_id=client_id, # Still needed for logging inside finetune
             epochs=FINETUNE_EPOCHS,
             lr=LR,
             device=device,
         )
 
-        # Evaluate metrics *after* fine-tuning
-        print(f"\n--- Metrics AFTER fine-tuning (after unlearning client {client_id}) ---")
-        evaluate_and_print_metrics(
-            model=finetuned_model,
-            is_mtl=IS_MTL,
-            retain_loader=retain_loader,
-            forgotten_client_loaders=forgotten_client_loaders,
-            test_loader=test_loader,
-            device=device,
-            currently_forgetting_client_id=client_id,
-            all_forgotten_client_ids=forgotten_clients_ids
-        )
-
         # Save the fine-tuned model
-        finetuned_model_path = f"finetuned_model_no_mtl_forgot_{'_'.join(map(str, forgotten_clients_ids))}.h5"
+        finetuned_model_path = f"finetuned_model_no_mtl_forgot_{'_'.join(map(str, forgotten_clients))}.h5"
         torch.save(finetuned_model.state_dict(), finetuned_model_path)
         print(f"✓ Saved fine-tuned model to {finetuned_model_path}")
         
