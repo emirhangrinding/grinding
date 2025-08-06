@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import argparse
 import os
+from typing import List
 
 from models import MTL_Two_Heads_ResNet, StandardResNet
 from evaluation import (
@@ -19,39 +20,64 @@ def evaluate_and_print_metrics(
     model, 
     is_mtl, 
     retain_loader, 
-    forget_loader, 
+    forgotten_client_loaders: List[DataLoader], 
     test_loader, 
     device, 
-    target_client_id
+    currently_forgetting_client_id: int,
+    all_forgotten_client_ids: List[int]
 ):
-    """Helper function to evaluate model and print metrics."""
+    """Helper function to evaluate model and print metrics for multiple forgotten clients."""
     model.eval()
     
+    # --- Metrics for the client being forgotten in the CURRENT stage ---
+    current_forget_loader = forgotten_client_loaders[all_forgotten_client_ids.index(currently_forgetting_client_id)]
+    
     if is_mtl:
-        # For MTL, we need a combined loader for evaluation that preserves subset labels
-        # This approach is simplified; a more robust solution might be needed depending on the dataset structure
-        combined_loader = DataLoader(
-            torch.utils.data.ConcatDataset([retain_loader.dataset, forget_loader.dataset]),
+        # For MTL, create a combined loader for the current forget client to calculate metrics
+        combined_loader_current = DataLoader(
+            torch.utils.data.ConcatDataset([retain_loader.dataset, current_forget_loader.dataset]),
             batch_size=retain_loader.batch_size,
             shuffle=False
         )
-        target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, combined_loader, device, target_client_id)
-        target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(model, combined_loader, device, target_client_id)
-    else: # No-MTL
-        target_digit_acc = calculate_overall_digit_classification_accuracy(model, forget_loader, device)
-        other_digit_acc = calculate_overall_digit_classification_accuracy(model, retain_loader, device)
-        target_subset_acc, other_subset_acc = 0.0, 0.0 # Not applicable
-
-    mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
-    test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device) if test_loader else -1.0
-
-    print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
-    print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
-    if is_mtl:
+        target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, combined_loader_current, device, currently_forgetting_client_id)
+        target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(model, combined_loader_current, device, currently_forgetting_client_id)
+        
+        print(f"--- Metrics for forgotten client {currently_forgetting_client_id} (current stage) ---")
+        print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
+        print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
         print(f"Subset ID accuracy on target subset: {target_subset_acc:.4f}")
         print(f"Subset ID accuracy on other subsets: {other_subset_acc:.4f}")
+
+    else: # No-MTL
+        target_digit_acc = calculate_overall_digit_classification_accuracy(model, current_forget_loader, device)
+        other_digit_acc = calculate_overall_digit_classification_accuracy(model, retain_loader, device)
+        print(f"--- Metrics for forgotten client {currently_forgetting_client_id} (current stage) ---")
+        print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
+        print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
+
+    # --- Metrics for ALL forgotten clients ---
+    if len(all_forgotten_client_ids) > 1:
+        print("\n--- Cumulative Metrics for ALL Forgotten Clients ---")
+        for client_id in all_forgotten_client_ids:
+            loader = forgotten_client_loaders[all_forgotten_client_ids.index(client_id)]
+            if is_mtl:
+                digit_acc, _ = calculate_digit_classification_accuracy(model, loader, device, client_id)
+                subset_acc, _ = calculate_subset_identification_accuracy(model, loader, device, client_id)
+                print(f"  Client {client_id}: Digit Acc = {digit_acc:.4f}, Subset ID Acc = {subset_acc:.4f}")
+            else:
+                digit_acc = calculate_overall_digit_classification_accuracy(model, loader, device)
+                print(f"  Client {client_id}: Digit Acc = {digit_acc:.4f}")
+
+
+    # --- Overall Test and MIA Metrics ---
+    # MIA is calculated between the entire retain set and the *currently* forgotten client
+    mia_score = get_membership_attack_prob_train_only(retain_loader, current_forget_loader, model)
+    test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device) if test_loader else -1.0
+
+    print("\n--- Overall Performance ---")
     print(f"Test set accuracy: {test_acc:.4f}")
-    print(f"Train-only MIA Score: {mia_score:.4f}")
+    print(f"Train-only MIA Score (vs client {currently_forgetting_client_id}): {mia_score:.4f}")
+
 
 def finetune_model(
     model,
@@ -180,8 +206,8 @@ def finetune_model(
         epoch_loss = running_loss / len(retain_loader.dataset)
         print(f"Fine-tuning Epoch {epoch+1}/{epochs}, Loss on Retain Set: {epoch_loss:.4f}")
 
-        print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{epochs} ---")
-        evaluate_and_print_metrics(model, is_mtl, retain_loader, forget_loader, test_loader, device, target_client_id)
+        # Note: The original call to evaluate_and_print_metrics is removed from here.
+        # Evaluation should be done explicitly outside the fine-tuning loop if needed after each epoch.
         
     print("\n--- Fine-tuning Script Finished ---")
     return model
@@ -190,4 +216,4 @@ if __name__ == "__main__":
     # This part remains for standalone testing if needed, but the main workflow
     # will call finetune_model directly from other scripts.
     # Note: For standalone execution, data loading logic would need to be re-added here.
-    print("This script is intended to be called from a workflow script that provides data loaders.") 
+    print("This script is intended to be called from a workflow script that provides data loaders.")
