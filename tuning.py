@@ -82,7 +82,7 @@ def optimise_ssd_hyperparams(
         primary_baseline = BASELINE_METRICS_ROUND_2 if num_forgotten_clients > 1 else BASELINE_METRICS_ROUND_1
         primary_metrics_tuning = {key: initial_ssd_metrics[key] for key in primary_baseline}
         primary_delta_score = calculate_baseline_delta_score(
-            primary_metrics_tuning, primary_baseline, num_forgotten_clients, is_mtl
+            primary_metrics_tuning, primary_baseline, num_forgotten_clients=num_forgotten_clients
         )
         total_delta_score += primary_delta_score
 
@@ -107,7 +107,7 @@ def optimise_ssd_hyperparams(
                 secondary_metrics_tuning = {key: subsequent_ssd_metrics[key] for key in BASELINE_METRICS_ROUND_1}
                 # Weighting for these is for 1 forgotten client
                 secondary_delta_score = calculate_baseline_delta_score(
-                    secondary_metrics_tuning, BASELINE_METRICS_ROUND_1, 1, is_mtl
+                    secondary_metrics_tuning, BASELINE_METRICS_ROUND_1, num_forgotten_clients=1
                 )
                 total_delta_score += secondary_delta_score
 
