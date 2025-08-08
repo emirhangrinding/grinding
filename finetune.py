@@ -12,52 +12,16 @@ from evaluation import (
     calculate_subset_identification_accuracy,
     calculate_overall_digit_classification_accuracy,
     get_membership_attack_prob_train_only,
+    evaluate_and_print_metrics,
 )
 from utils import set_global_seed
-
-def evaluate_and_print_metrics(
-    model, 
-    is_mtl, 
-    retain_loader, 
-    forget_loader, 
-    test_loader, 
-    device, 
-    target_client_id
-):
-    """Helper function to evaluate model and print metrics."""
-    model.eval()
-    
-    if is_mtl:
-        # For MTL, we need a combined loader for evaluation that preserves subset labels
-        # This approach is simplified; a more robust solution might be needed depending on the dataset structure
-        combined_loader = DataLoader(
-            torch.utils.data.ConcatDataset([retain_loader.dataset, forget_loader.dataset]),
-            batch_size=retain_loader.batch_size,
-            shuffle=False
-        )
-        target_digit_acc, other_digit_acc = calculate_digit_classification_accuracy(model, combined_loader, device, target_client_id)
-        target_subset_acc, other_subset_acc = calculate_subset_identification_accuracy(model, combined_loader, device, target_client_id)
-    else: # No-MTL
-        target_digit_acc = calculate_overall_digit_classification_accuracy(model, forget_loader, device)
-        other_digit_acc = calculate_overall_digit_classification_accuracy(model, retain_loader, device)
-        target_subset_acc, other_subset_acc = 0.0, 0.0 # Not applicable
-
-    mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, model)
-    test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device) if test_loader else -1.0
-
-    print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
-    print(f"Digit accuracy on other subsets: {other_digit_acc:.4f}")
-    if is_mtl:
-        print(f"Subset ID accuracy on target subset: {target_subset_acc:.4f}")
-        print(f"Subset ID accuracy on other subsets: {other_subset_acc:.4f}")
-    print(f"Test set accuracy: {test_acc:.4f}")
-    print(f"Train-only MIA Score: {mia_score:.4f}")
 
 def finetune_model(
     model,
     is_mtl,
     retain_loader,
     forget_loader,
+    forgotten_client_loaders,
     test_loader,
     target_client_id,
     epochs=1,
@@ -68,7 +32,9 @@ def finetune_model(
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ):
     """
-    Fine-tunes a model after unlearning, now accepting data loaders directly.
+    Fine-tunes a model after unlearning, using retain data from the remaining clients
+    to improve performance, while adversarially penalizing performance on the currently
+    forgotten client's data.
     """
     set_global_seed(seed)
     model.to(device)
@@ -178,10 +144,19 @@ def finetune_model(
             running_loss += loss.item() * batch[0].size(0)
 
         epoch_loss = running_loss / len(retain_loader.dataset)
-        print(f"Fine-tuning Epoch {epoch+1}/{epochs}, Loss on Retain Set: {epoch_loss:.4f}")
+        print(f"Fine-tuning Epoch {epoch+1}/{epochs}, Combined objective (retain - lambda_d*forget_digit - lambda_s*forget_subset): {epoch_loss:.4f}")
 
         print(f"\n--- Metrics after fine-tuning epoch {epoch+1}/{epochs} ---")
-        evaluate_and_print_metrics(model, is_mtl, retain_loader, forget_loader, test_loader, device, target_client_id)
+        # Use the shared evaluation to report per-client metrics (forgotten clients individually + others)
+        evaluate_and_print_metrics(
+            model=model,
+            is_mtl=is_mtl,
+            retain_loader=retain_loader,
+            test_loader=test_loader,
+            device=device,
+            forgotten_client_loaders=forgotten_client_loaders,
+            current_forget_client_id=target_client_id,
+        )
         
     print("\n--- Fine-tuning Script Finished ---")
     return model

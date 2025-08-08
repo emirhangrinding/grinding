@@ -29,6 +29,8 @@ def run_sequential_forgetting(
     clients_to_forget,
     baseline_model_path,
     initial_unlearned_model_path=None,
+    initial_forgotten_clients=None,
+    override_unlearned_model_path=None,
 ):
     """
     Performs sequential unlearning on a list of clients.
@@ -39,7 +41,8 @@ def run_sequential_forgetting(
     set_global_seed(SEED)
     
     current_model_path = baseline_model_path
-    forgotten_clients = []
+    # Allows starting from a later round by seeding previously forgotten clients
+    forgotten_clients = list(initial_forgotten_clients) if initial_forgotten_clients else []
     
     # Generate the full client dataset structure once
     clients_data, _, full_dataset = generate_subdatasets(
@@ -63,11 +66,15 @@ def run_sequential_forgetting(
         unlearned_model_name = f"unlearned_model_mtl_forgot_{'_'.join(map(str, forgotten_clients + [client_id]))}"
         unlearned_model_path = f"{unlearned_model_name}.h5"
 
-        # Check for a pre-existing model for the *first* client, or a locally saved one for subsequent clients
+        # Check for a pre-existing model for the *first* client, an override path, or a locally saved one
         if i == 0 and initial_unlearned_model_path and os.path.exists(initial_unlearned_model_path):
             print(f"Found provided unlearned model for the first client: {initial_unlearned_model_path}")
             print("Skipping initial SSD tuning.")
             unlearned_model_path = initial_unlearned_model_path
+        elif override_unlearned_model_path and os.path.exists(override_unlearned_model_path):
+            print(f"Using provided unlearned model override: {override_unlearned_model_path}")
+            print("Skipping SSD tuning for this stage.")
+            unlearned_model_path = override_unlearned_model_path
         elif os.path.exists(unlearned_model_path):
             print(f"Unlearned model for client {client_id} already exists locally. Skipping SSD tuning.")
         else:
@@ -141,6 +148,7 @@ def run_sequential_forgetting(
             is_mtl=IS_MTL,
             retain_loader=retain_loader,
             forget_loader=forgotten_client_loaders[client_id],  # Pass only the current forget loader
+            forgotten_client_loaders=forgotten_client_loaders,  # For detailed evaluation prints
             test_loader=test_loader,
             target_client_id=client_id,
             epochs=FINETUNE_EPOCHS,
@@ -158,18 +166,36 @@ def run_sequential_forgetting(
     print("\n--- Sequential forgetting workflow completed! ---")
 
 if __name__ == "__main__":
-    # Define the sequence of clients to forget
-    clients_to_forget_seq = [0, 1] 
-    
-    # Path to the initial, fully trained baseline model
-    # This model should exist before running the script
-    baseline_model = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
-
-    # Path to a model where one client has already been unlearned (optional)
-    initial_unlearned_model = "/kaggle/input/unlearned/pytorch/default/1/unlearned_model_mtl.h5"
-
-    run_sequential_forgetting(
-        clients_to_forget_seq, 
-        baseline_model,
-        initial_unlearned_model_path=initial_unlearned_model
+    # Default paths (can be overridden via environment variables below)
+    baseline_model = os.environ.get(
+        "BASELINE_MODEL_PATH",
+        "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5",
     )
+    initial_unlearned_model = os.environ.get(
+        "INITIAL_UNLEARNED_MODEL_PATH",
+        "/kaggle/input/unlearned/pytorch/default/1/unlearned_model_mtl.h5",
+    )
+
+    # Support a simple round-2-only finetuning flow via environment variables
+    # Set ROUND2_ONLY=1 and provide ROUND2_UNLEARNED_MODEL_PATH to skip SSD and only fine-tune.
+    if os.environ.get("ROUND2_ONLY", "0") == "1":
+        round2_path = os.environ.get("ROUND2_UNLEARNED_MODEL_PATH")
+        if not round2_path or not os.path.exists(round2_path):
+            raise FileNotFoundError(
+                "ROUND2_ONLY is set but ROUND2_UNLEARNED_MODEL_PATH is missing or does not exist."
+            )
+        # Previously forgotten client 0; now fine-tune after forgetting client 1 as well
+        run_sequential_forgetting(
+            clients_to_forget=[1],
+            baseline_model_path=baseline_model,
+            initial_unlearned_model_path=None,
+            initial_forgotten_clients=[0],
+            override_unlearned_model_path=round2_path,
+        )
+    else:
+        # Full two-round flow by default
+        run_sequential_forgetting(
+            clients_to_forget=[0, 1],
+            baseline_model_path=baseline_model,
+            initial_unlearned_model_path=initial_unlearned_model,
+        )

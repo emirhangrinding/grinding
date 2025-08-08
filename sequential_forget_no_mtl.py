@@ -134,6 +134,7 @@ def run_sequential_forgetting_no_mtl(
             is_mtl=IS_MTL,
             retain_loader=retain_loader,
             forget_loader=forgotten_client_loaders[client_id], # Pass only the current forget loader
+            forgotten_client_loaders=forgotten_client_loaders,  # For detailed evaluation prints
             test_loader=test_loader,
             target_client_id=client_id, # Still needed for logging inside finetune
             epochs=FINETUNE_EPOCHS,

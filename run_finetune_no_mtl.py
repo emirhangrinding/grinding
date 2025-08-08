@@ -89,11 +89,15 @@ def main():
     # Fine-tune the unlearned model
     print("\n--- Fine-tuning the unlearned no-MTL model ---")
     
+    # Build mapping needed for detailed evaluation during fine-tuning (no-MTL uses it for uniform interface)
+    forgotten_client_loaders = {target_client_id: forget_loader}
+
     finetuned_model = finetune_model(
         model=model,
         is_mtl=False,
         retain_loader=retain_loader,
         forget_loader=forget_loader,
+        forgotten_client_loaders=forgotten_client_loaders,
         test_loader=test_loader,
         target_client_id=target_client_id,
         epochs=10,
