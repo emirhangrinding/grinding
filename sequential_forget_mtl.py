@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import subprocess
 import os
+import argparse
 import torch
 from torch.utils.data import DataLoader, Subset
 
@@ -31,6 +32,8 @@ def run_sequential_forgetting(
     initial_unlearned_model_path=None,
     initial_forgotten_clients=None,
     override_unlearned_model_path=None,
+    lambda_digit: float = 0.3,
+    lambda_subset: float = 0.2,
 ):
     """
     Performs sequential unlearning on a list of clients.
@@ -153,6 +156,8 @@ def run_sequential_forgetting(
             target_client_id=client_id,
             epochs=FINETUNE_EPOCHS,
             lr=LR,
+            lambda_digit=lambda_digit,
+            lambda_subset=lambda_subset,
             device=device,
         )
 
@@ -166,6 +171,13 @@ def run_sequential_forgetting(
     print("\n--- Sequential forgetting workflow completed! ---")
 
 if __name__ == "__main__":
+    # CLI for lambda overrides with env fallbacks
+    parser = argparse.ArgumentParser(description="Sequential forgetting with optional lambda overrides")
+    parser.add_argument("--lambda-digit", dest="lambda_digit", type=float, default=None, help="Weight for adversarial digit loss")
+    parser.add_argument("--lambda-subset", dest="lambda_subset", type=float, default=None, help="Weight for adversarial subset loss")
+    # Parse known args only to avoid interfering with other external arg parsers
+    args, _ = parser.parse_known_args()
+
     # Default paths (can be overridden via environment variables below)
     baseline_model = os.environ.get(
         "BASELINE_MODEL_PATH",
@@ -175,6 +187,12 @@ if __name__ == "__main__":
         "INITIAL_UNLEARNED_MODEL_PATH",
         "/kaggle/input/unlearned/pytorch/default/1/unlearned_model_mtl.h5",
     )
+
+    # Resolve lambdas from CLI or env (env var names match CLI flags but uppercase)
+    resolved_lambda_digit = args.lambda_digit if args.lambda_digit is not None else float(os.environ.get("LAMBDA_DIGIT", "0.3"))
+    resolved_lambda_subset = args.lambda_subset if args.lambda_subset is not None else float(os.environ.get("LAMBDA_SUBSET", "0.2"))
+
+    print(f"Using lambda_digit={resolved_lambda_digit}, lambda_subset={resolved_lambda_subset}")
 
     # Support a simple round-2-only finetuning flow via environment variables
     # Set ROUND2_ONLY=1 and provide ROUND2_UNLEARNED_MODEL_PATH to skip SSD and only fine-tune.
@@ -191,6 +209,8 @@ if __name__ == "__main__":
             initial_unlearned_model_path=None,
             initial_forgotten_clients=[0],
             override_unlearned_model_path=round2_path,
+            lambda_digit=resolved_lambda_digit,
+            lambda_subset=resolved_lambda_subset,
         )
     else:
         # Full two-round flow by default
@@ -198,4 +218,6 @@ if __name__ == "__main__":
             clients_to_forget=[0, 1],
             baseline_model_path=baseline_model,
             initial_unlearned_model_path=initial_unlearned_model,
+            lambda_digit=resolved_lambda_digit,
+            lambda_subset=resolved_lambda_subset,
         )
