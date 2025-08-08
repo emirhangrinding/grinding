@@ -39,6 +39,14 @@ def finetune_model(
     set_global_seed(seed)
     model.to(device)
 
+    # Establish a baseline digit accuracy for the current forgotten client (client_id)
+    # We will only penalize the adversarial digit loss when the current accuracy exceeds this baseline.
+    baseline_digit_acc_forget = calculate_overall_digit_classification_accuracy(
+        model, forget_loader, device
+    ) if is_mtl else 0.0
+    if is_mtl:
+        print(f"Baseline digit acc on forgotten client {target_client_id}: {baseline_digit_acc_forget:.4f}")
+
     if is_mtl:
         print("\n--- Fine-tuning subset head and encoder's final layers for MTL model ---")
         
@@ -126,12 +134,23 @@ def finetune_model(
                 inputs_f, labels_f, subset_labels_f = inputs_f.to(device), labels_f.to(device), subset_labels_f.to(device)
                 
                 digit_logits_f, subset_logits_f, _ = model(inputs_f)
+
+                # Compute batch accuracy on the forgotten client to modulate the adversarial digit penalty
+                with torch.no_grad():
+                    _, digit_preds_f = torch.max(digit_logits_f, 1)
+                    batch_acc_f = (digit_preds_f == labels_f).float().mean().item()
+                    # Scale digit penalty by the amount current acc exceeds baseline; 0 if below baseline
+                    digit_excess = max(0.0, batch_acc_f - baseline_digit_acc_forget)
                 
                 digit_loss_f = criterion(digit_logits_f, labels_f)
                 subset_loss_f = criterion(subset_logits_f, subset_labels_f)
 
                 # --- Combined Loss ---
-                loss = retain_loss - (lambda_digit * digit_loss_f) - (lambda_subset * subset_loss_f)
+                loss = (
+                    retain_loss
+                    - ((lambda_digit * digit_excess) * digit_loss_f)
+                    - (lambda_subset * subset_loss_f)
+                )
                 
             else: # No-MTL
                 inputs, labels = batch
