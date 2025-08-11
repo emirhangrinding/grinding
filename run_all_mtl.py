@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import subprocess
 import os
 import torch
@@ -89,9 +90,18 @@ def main():
     """
     Runs the complete workflow for training a baseline MTL model and performing SSD unlearning.
     """
+    parser = argparse.ArgumentParser(description="Run full MTL workflow")
+    parser.add_argument("--disable-disentanglement", action="store_true", help="Disable disentanglement loss during baseline training")
+    args = parser.parse_args()
+
     print("Starting the full MTL workflow...")
 
-    baseline_model_path = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
+    kaggle_default = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
+    # If disabling disentanglement, force a separate local path so we train a new model
+    if args.disable_disentanglement:
+        baseline_model_path = "baseline_mtl_all_clients_no_dis.h5"
+    else:
+        baseline_model_path = kaggle_default if os.path.exists(kaggle_default) else "baseline_mtl_all_clients.h5"
 
     # Step 1: Train the baseline model on all clients
     if os.path.exists(baseline_model_path):
@@ -102,7 +112,9 @@ def main():
     else:
         print("\n--- Step 1: Training baseline MTL model on all clients ---")
         train_script = "train_baseline_all_mtl.py"
-        train_command = f"python {train_script}"
+        train_command = f"python {train_script} --path {baseline_model_path}"
+        if args.disable_disentanglement:
+            train_command += " --lambda_dis 0.0"
         
         try:
             subprocess.run(train_command, shell=True, check=True)

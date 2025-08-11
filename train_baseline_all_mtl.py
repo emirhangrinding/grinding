@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import random
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -80,11 +81,37 @@ def train_baseline_all_clients(
     return model, history
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train baseline MTL on all clients")
+    parser.add_argument("--dataset_name", default="CIFAR10", choices=["MNIST", "CIFAR10"])
+    parser.add_argument("--setting", default="non-iid", choices=["iid", "non-iid", "extreme-non-iid"])
+    parser.add_argument("--num_clients", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--num_epochs", type=int, default=200)
+    parser.add_argument("--lambda_1", type=float, default=1.0)
+    parser.add_argument("--lambda_2", type=float, default=1.0)
+    parser.add_argument("--lambda_dis", type=float, default=0.1, help="Weight for disentanglement loss; set 0.0 to disable")
+    parser.add_argument("--lambda_pull", type=float, default=1.0)
+    parser.add_argument("--lambda_push", type=float, default=1.0)
+    parser.add_argument("--data_root", default="./data")
+    parser.add_argument("--path", default="baseline_mtl_all_clients.h5")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--head_size", default="medium", choices=["big", "medium", "small"])
+
+    args = parser.parse_args()
+
     train_baseline_all_clients(
-        dataset_name="CIFAR10",
-        num_clients=10,
-        head_size="medium",
-        seed=42,
-        path="baseline_mtl_all_clients.h5",
-        num_epochs=200
-    ) 
+        dataset_name=args.dataset_name,
+        setting=args.setting,
+        num_clients=args.num_clients,
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
+        lambda_1=args.lambda_1,
+        lambda_2=args.lambda_2,
+        lambda_dis=args.lambda_dis,
+        lambda_pull=args.lambda_pull,
+        lambda_push=args.lambda_push,
+        data_root=args.data_root,
+        path=args.path,
+        seed=args.seed,
+        head_size=args.head_size,
+    )
