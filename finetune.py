@@ -48,31 +48,12 @@ def finetune_model(
         print(f"Baseline digit acc on forgotten client {target_client_id}: {baseline_digit_acc_forget:.4f}")
 
     if is_mtl:
-        print("\n--- Fine-tuning subset head and encoder's final layers for MTL model ---")
-        
-        # Freeze all parameters initially
+        print("\n--- Fine-tuning entire model for MTL model ---")
+        # Ensure all parameters are trainable
         for param in model.parameters():
-            param.requires_grad = False
-            
-        # Unfreeze the subset_head
-        for param in model.subset_head.parameters():
             param.requires_grad = True
-
-        # Unfreeze the digit_head as well
-        for param in model.digit_head.parameters():
-            param.requires_grad = True
-        
-        # Unfreeze the final layer of the ResNet encoder
-        for param in model.resnet.layer4.parameters():
-            param.requires_grad = True
-            
-        # Unfreeze the feature projection layer if it exists
-        if model.feature_proj is not None:
-            for param in model.feature_proj.parameters():
-                param.requires_grad = True
-        
-        # Collect all parameters that need gradients
-        params_to_tune = [p for p in model.parameters() if p.requires_grad]
+        # Fine-tune all parameters
+        params_to_tune = model.parameters()
 
     else: # No-MTL
         print("\n--- Fine-tuning entire model for no-MTL model ---")
@@ -86,26 +67,8 @@ def finetune_model(
         forget_loader_iter = iter(forget_loader)
 
     for epoch in range(epochs):
-        if is_mtl:
-            # Set the entire model to eval mode first to freeze all BatchNorm layers
-            model.eval()
-            
-            # Set the subset head to train mode
-            model.subset_head.train()
-            
-            # Set the digit head to train mode
-            model.digit_head.train()
-
-            # Set the final encoder layer's BatchNorm layers to train mode
-            for module in model.resnet.layer4.modules():
-                if isinstance(module, nn.BatchNorm2d):
-                    module.train()
-
-            # Set the feature projection layer to train mode if it exists
-            if model.feature_proj is not None:
-                model.feature_proj.train()
-        else:
-            model.train()
+        # Train the entire model during fine-tuning
+        model.train()
 
         running_loss = 0.0
         
