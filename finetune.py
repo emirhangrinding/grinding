@@ -15,7 +15,7 @@ from evaluation import (
     get_membership_attack_prob_train_only,
     evaluate_and_print_metrics,
 )
-from utils import set_global_seed
+from utils import set_global_seed, calculate_baseline_delta_score
 
 def finetune_model(
     model,
@@ -35,6 +35,7 @@ def finetune_model(
     search_lambdas: bool = True,
     lambda_digit_grid=None,
     lambda_subset_grid=None,
+    epochs_grid=None,
     save_best_model_path: str = None,
 ):
     """
@@ -45,21 +46,25 @@ def finetune_model(
     set_global_seed(seed)
     model.to(device)
 
-    # Establish a baseline digit accuracy for the current forgotten client (client_id)
+    # Establish a baseline digit accuracy for the current forgotten client's data
     # We will only penalize the adversarial digit loss when the current accuracy exceeds this baseline.
     baseline_digit_acc_forget = calculate_overall_digit_classification_accuracy(
         model, forget_loader, device
-    ) if is_mtl else 0.0
+    )
     if is_mtl:
         print(f"Baseline digit acc on forgotten client {target_client_id}: {baseline_digit_acc_forget:.4f}")
+    else:
+        print(f"Baseline digit acc on forgotten data (no-MTL) for client {target_client_id}: {baseline_digit_acc_forget:.4f}")
 
     criterion = nn.CrossEntropyLoss()
 
-    # Default grids if not provided (used only when is_mtl and search_lambdas)
+    # Default grids if not provided (used when search_lambdas)
     if lambda_digit_grid is None:
-        lambda_digit_grid = [0.0, 0.1, 0.3, 0.5]
+        lambda_digit_grid = [0.0, 0.05, 0.1, 0.3, 0.5]
     if lambda_subset_grid is None:
-        lambda_subset_grid = [0.0, 0.05, 0.1, 0.2]
+        lambda_subset_grid = [0.0, 0.05, 0.1, 0.2] if is_mtl else [0.0]
+    if epochs_grid is None:
+        epochs_grid = [1, 2, 3]
 
     def score_from_metrics(metrics_dict: dict):
         test_acc = metrics_dict.get("Test set accuracy", 0.0)
@@ -72,30 +77,29 @@ def finetune_model(
         avg_forgotten = sum(forgotten_digit_accs) / len(forgotten_digit_accs) if forgotten_digit_accs else 0.0
         return (test_acc, retain_acc, -avg_forgotten)
 
-    def train_one_setting(current_lambda_digit: float, current_lambda_subset: float):
+    def train_one_setting(current_lambda_digit: float, current_lambda_subset: float, num_epochs: int):
         # Ensure all parameters are trainable each run
         for param in model.parameters():
             param.requires_grad = True
         params_to_tune = model.parameters()
         optimizer = optim.Adam(params_to_tune, lr=lr)
-        if is_mtl:
-            forget_loader_iter = iter(forget_loader)
+        forget_loader_iter = iter(forget_loader)
 
-        for epoch in range(epochs):
+        for epoch in range(num_epochs):
             model.train()
             running_loss = 0.0
 
             for batch in retain_loader:
                 optimizer.zero_grad()
 
-                if is_mtl:
-                    # For MTL, we use an adversarial loss, requiring both retain and forget data
-                    try:
-                        forget_batch = next(forget_loader_iter)
-                    except StopIteration:
-                        forget_loader_iter = iter(forget_loader)
-                        forget_batch = next(forget_loader_iter)
+                # For both MTL and no-MTL, we use an adversarial digit loss on the forgotten data.
+                try:
+                    forget_batch = next(forget_loader_iter)
+                except StopIteration:
+                    forget_loader_iter = iter(forget_loader)
+                    forget_batch = next(forget_loader_iter)
 
+                if is_mtl:
                     # --- Retain Set Loss (Encourage Learning) ---
                     inputs_r, labels_r, subset_labels_r = batch
                     inputs_r, labels_r, subset_labels_r = inputs_r.to(device), labels_r.to(device), subset_labels_r.to(device)
@@ -107,14 +111,12 @@ def finetune_model(
                     # --- Forget Set Loss (Adversarial: Encourage Forgetting) ---
                     inputs_f, labels_f, subset_labels_f = forget_batch
                     inputs_f, labels_f, subset_labels_f = inputs_f.to(device), labels_f.to(device), subset_labels_f.to(device)
-
                     digit_logits_f, subset_logits_f, _ = model(inputs_f)
 
                     # Compute batch accuracy on the forgotten client to modulate the adversarial digit penalty
                     with torch.no_grad():
                         _, digit_preds_f = torch.max(digit_logits_f, 1)
                         batch_acc_f = (digit_preds_f == labels_f).float().mean().item()
-                        # Scale digit penalty by the amount current acc exceeds baseline; 0 if below baseline
                         digit_excess = max(0.0, batch_acc_f - baseline_digit_acc_forget)
 
                     digit_loss_f = criterion(digit_logits_f, labels_f)
@@ -126,11 +128,30 @@ def finetune_model(
                         - ((current_lambda_digit * digit_excess) * digit_loss_f)
                         - (current_lambda_subset * subset_loss_f)
                     )
-                else:  # No-MTL
-                    inputs, labels = batch
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
+                else:
+                    # --- Retain Set Loss (Encourage Learning) ---
+                    inputs_r, labels_r = batch
+                    inputs_r, labels_r = inputs_r.to(device), labels_r.to(device)
+                    outputs_r = model(inputs_r)
+                    retain_loss = criterion(outputs_r, labels_r)
+
+                    # --- Forget Set Loss (Adversarial: Encourage Forgetting) ---
+                    inputs_f, labels_f = forget_batch
+                    inputs_f, labels_f = inputs_f.to(device), labels_f.to(device)
+                    outputs_f = model(inputs_f)
+
+                    with torch.no_grad():
+                        _, digit_preds_f = torch.max(outputs_f, 1)
+                        batch_acc_f = (digit_preds_f == labels_f).float().mean().item()
+                        digit_excess = max(0.0, batch_acc_f - baseline_digit_acc_forget)
+
+                    digit_loss_f = criterion(outputs_f, labels_f)
+
+                    # --- Combined Loss (no subset term in no-MTL) ---
+                    loss = (
+                        retain_loss
+                        - ((current_lambda_digit * digit_excess) * digit_loss_f)
+                    )
 
                 loss.backward()
                 optimizer.step()
@@ -139,11 +160,13 @@ def finetune_model(
             epoch_loss = running_loss / len(retain_loader.dataset)
             if is_mtl:
                 print(
-                    f"Fine-tuning Epoch {epoch+1}/{epochs} | lambda_digit={current_lambda_digit}, "
+                    f"Fine-tuning Epoch {epoch+1}/{num_epochs} | lambda_digit={current_lambda_digit}, "
                     f"lambda_subset={current_lambda_subset} | Objective: {epoch_loss:.4f}"
                 )
             else:
-                print(f"Fine-tuning Epoch {epoch+1}/{epochs} | Objective: {epoch_loss:.4f}")
+                print(
+                    f"Fine-tuning Epoch {epoch+1}/{num_epochs} | lambda_digit={current_lambda_digit} | Objective: {epoch_loss:.4f}"
+                )
 
         print("\n--- Metrics after fine-tuning with current lambdas ---")
         metrics = evaluate_and_print_metrics(
@@ -160,33 +183,91 @@ def finetune_model(
     # Keep the initial model state so each grid run starts from the same baseline
     base_state_dict = copy.deepcopy(model.state_dict())
 
-    if is_mtl and search_lambdas:
-        print("\n--- Fine-tuning entire model for MTL model (lambda grid search) ---")
+    if search_lambdas:
+        print("\n--- Fine-tuning entire model (grid search) ---")
+        if not is_mtl:
+            print("Note: Subset lambda has no effect in no-MTL; only digit lambda influences training.")
         best_score = None
         best_state = None
         best_combo = None
-        for ld in lambda_digit_grid:
-            for ls in lambda_subset_grid:
-                print(f"\n>>> Trying lambda_digit={ld}, lambda_subset={ls}")
-                model.load_state_dict(base_state_dict)
-                metrics = train_one_setting(ld, ls)
-                score = score_from_metrics(metrics)
-                if (best_score is None) or (score > best_score):
-                    best_score = score
-                    best_state = copy.deepcopy(model.state_dict())
-                    best_combo = (ld, ls)
+        best_epochs = None
+
+        # Select baseline metrics based on stage and MTL setting
+        num_forgotten_clients = max(1, len(forgotten_client_loaders) if forgotten_client_loaders else 1)
+        if is_mtl:
+            BASELINE_METRICS_ROUND_1 = {
+                'target_digit_acc': 0.8956,
+                'other_digit_acc': 0.9998,
+                'other_subset_acc': 0.9974,
+                'test_digit_acc': 0.9130,
+            }
+            BASELINE_METRICS_ROUND_2 = {
+                'target_digit_acc': 0.8906,
+                'other_digit_acc': 0.9999,
+                'other_subset_acc': 0.9985,
+                'test_digit_acc': 0.9052,
+            }
+        else:
+            BASELINE_METRICS_ROUND_1 = {
+                'target_digit_acc': 0.8902,
+                'other_digit_acc': 0.9999,
+                'test_digit_acc': 0.9061,
+            }
+            BASELINE_METRICS_ROUND_2 = {
+                'target_digit_acc': 0.8729,
+                'other_digit_acc': 1.0000,
+                'test_digit_acc': 0.8931,
+            }
+
+        target_baseline = BASELINE_METRICS_ROUND_2 if num_forgotten_clients > 1 else BASELINE_METRICS_ROUND_1
+
+        for num_epochs in epochs_grid:
+            for ld in lambda_digit_grid:
+                for ls in lambda_subset_grid:
+                    print(f"\n>>> Trying epochs={num_epochs}, lambda_digit={ld}, lambda_subset={ls}")
+                    model.load_state_dict(base_state_dict)
+                    metrics = train_one_setting(ld, ls, num_epochs)
+
+                    # Map current metrics to baseline keys
+                    current_key = f"Digit acc on client {target_client_id} (newly forgotten)"
+                    target_digit_acc = metrics.get(current_key, 0.0)
+                    other_digit_acc = metrics.get("Digit accuracy on other subsets", 0.0)
+                    test_digit_acc = metrics.get("Test set accuracy", 0.0)
+                    current_metrics = {
+                        'target_digit_acc': target_digit_acc,
+                        'other_digit_acc': other_digit_acc,
+                        'test_digit_acc': test_digit_acc,
+                    }
+                    if is_mtl:
+                        other_subset_acc = metrics.get("Subset ID accuracy on other subsets", 0.0)
+                        current_metrics['other_subset_acc'] = other_subset_acc
+
+                    delta_score = calculate_baseline_delta_score(
+                        current_metrics,
+                        target_baseline,
+                        num_forgotten_clients=num_forgotten_clients,
+                    )
+                    print(f"Delta to baseline: {delta_score:.6f}")
+
+                    if (best_score is None) or (delta_score < best_score):
+                        best_score = delta_score
+                        best_state = copy.deepcopy(model.state_dict())
+                        best_combo = (ld, ls)
+                        best_epochs = num_epochs
         # Load best weights
         if best_state is not None:
             model.load_state_dict(best_state)
             print(
-                f"\n✓ Selected best lambdas: lambda_digit={best_combo[0]}, lambda_subset={best_combo[1]} "
-                f"with score={best_score}"
+                f"\n✓ Selected best setting: epochs={best_epochs}, lambda_digit={best_combo[0]}, "
+                f"lambda_subset={best_combo[1]} with baseline delta={best_score:.6f}"
             )
         else:
             print("Warning: No best state captured; falling back to last state.")
         # Save best model if requested or use a sensible default path
         if save_best_model_path is None:
-            save_best_model_path = f"finetuned_best_mtl_client_{target_client_id}.h5"
+            save_best_model_path = (
+                f"finetuned_best_mtl_client_{target_client_id}.h5" if is_mtl else "finetuned_best_no_mtl.h5"
+            )
         try:
             torch.save(model.state_dict(), save_best_model_path)
             print(f"✓ Saved best fine-tuned model to {save_best_model_path}")
@@ -202,7 +283,7 @@ def finetune_model(
 
         # Restore base state and run once
         model.load_state_dict(base_state_dict)
-        _ = train_one_setting(lambda_digit, lambda_subset)
+        _ = train_one_setting(lambda_digit, lambda_subset, epochs)
         # Save the resulting model
         if save_best_model_path is None:
             save_best_model_path = (
