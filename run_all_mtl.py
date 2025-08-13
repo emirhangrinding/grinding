@@ -93,13 +93,18 @@ def main():
     parser = argparse.ArgumentParser(description="Run full MTL workflow")
     parser.add_argument("--disable-disentanglement", action="store_true", help="Disable disentanglement loss during baseline training")
     parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on during SSD: 'subset' or 'digit'")
+    parser.add_argument("--ce-only", action="store_true", help="Use CE-only baseline model for unlearning (uses Kaggle CE-only weights if present; trains with lambda_dis=0.0 otherwise)")
     args = parser.parse_args()
 
     print("Starting the full MTL workflow...")
 
     kaggle_default = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
-    # If disabling disentanglement, force a separate local path so we train a new model
-    if args.disable_disentanglement:
+    kaggle_ce_only = "/kaggle/input/ce_only/pytorch/default/1/baseline_mtl_all_clients.h5"
+    # Choose model path
+    if args.ce_only:
+        # Prefer Kaggle CE-only baseline if present; otherwise, use a local CE-only filename
+        baseline_model_path = kaggle_ce_only if os.path.exists(kaggle_ce_only) else "baseline_mtl_all_clients_ce_only.h5"
+    elif args.disable_disentanglement:
         baseline_model_path = "baseline_mtl_all_clients_no_dis.h5"
     else:
         baseline_model_path = kaggle_default if os.path.exists(kaggle_default) else "baseline_mtl_all_clients.h5"
@@ -114,7 +119,8 @@ def main():
         print("\n--- Step 1: Training baseline MTL model on all clients ---")
         train_script = "train_baseline_all_mtl.py"
         train_command = f"python {train_script} --path {baseline_model_path}"
-        if args.disable_disentanglement:
+        # Train with lambda_dis=0.0 if CE-only is requested or disentanglement is disabled
+        if args.ce_only or args.disable_disentanglement:
             train_command += " --lambda_dis 0.0"
         
         try:
