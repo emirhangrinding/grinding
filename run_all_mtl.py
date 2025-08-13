@@ -92,6 +92,7 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Run full MTL workflow")
     parser.add_argument("--disable-disentanglement", action="store_true", help="Disable disentanglement loss during baseline training")
+    parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on during SSD: 'subset' or 'digit'")
     args = parser.parse_args()
 
     print("Starting the full MTL workflow...")
@@ -132,7 +133,7 @@ def main():
     # Step 2: Run SSD unlearning with Optuna tuning
     print("\n--- Step 2: Running SSD unlearning with Optuna tuning for MTL model ---")
     tune_script = "run_ssd_tuning.py"
-    tune_command = f"python {tune_script} --model-path {baseline_model_path}"
+    tune_command = f"python {tune_script} --model-path {baseline_model_path} --fisher-on {args.fisher_on}"
     
     try:
         subprocess.run(tune_command, shell=True, check=True)

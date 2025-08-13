@@ -160,8 +160,13 @@ def main():
 
     # Step 2: Run SSD unlearning with Optuna tuning
     print("\n--- Step 2: Running SSD unlearning with Optuna tuning ---")
+    import argparse
+    parser = argparse.ArgumentParser(description="Run full no-MTL workflow")
+    parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on during SSD: 'subset' or 'digit'")
+    args_cli, _ = parser.parse_known_args()
+
     tune_script = "run_ssd_tuning_no_mtl.py"
-    tune_command = f"python {tune_script} --model-path {baseline_model_path}"
+    tune_command = f"python {tune_script} --model-path {baseline_model_path} --fisher-on {args_cli.fisher_on}"
     
     try:
         subprocess.run(tune_command, shell=True, check=True)
