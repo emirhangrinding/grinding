@@ -99,7 +99,7 @@ def main():
     print("Starting the full MTL workflow...")
 
     kaggle_default = "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"
-    kaggle_ce_only = "/kaggle/input/ce_only/pytorch/default/1/baseline_mtl_all_clients.h5"
+    kaggle_ce_only = "/kaggle/input/ce_only/pytorch/default/1/baseline_mtl_all_clients_no_dis.h5"
     # Choose model path
     if args.ce_only:
         # Prefer Kaggle CE-only baseline if present; otherwise, use a local CE-only filename
