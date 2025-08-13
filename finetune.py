@@ -77,13 +77,24 @@ def finetune_model(
         avg_forgotten = sum(forgotten_digit_accs) / len(forgotten_digit_accs) if forgotten_digit_accs else 0.0
         return (test_acc, retain_acc, -avg_forgotten)
 
-    def train_one_setting(current_lambda_digit: float, current_lambda_subset: float, num_epochs: int):
+    def train_one_setting(
+        current_lambda_digit: float,
+        current_lambda_subset: float,
+        num_epochs: int,
+        eval_epochs=None,
+        baseline_for_scoring=None,
+        num_forgotten_clients_for_scoring: int = 1,
+        collect_best: bool = False,
+    ):
         # Ensure all parameters are trainable each run
         for param in model.parameters():
             param.requires_grad = True
         params_to_tune = model.parameters()
         optimizer = optim.Adam(params_to_tune, lr=lr)
         forget_loader_iter = iter(forget_loader)
+
+        best_info = None
+        eval_epochs_set = set(eval_epochs) if eval_epochs is not None else set()
 
         for epoch in range(num_epochs):
             model.train()
@@ -168,6 +179,46 @@ def finetune_model(
                     f"Fine-tuning Epoch {epoch+1}/{num_epochs} | lambda_digit={current_lambda_digit} | Objective: {epoch_loss:.4f}"
                 )
 
+            # Optionally evaluate at specific epochs to capture best checkpoint without retraining
+            if collect_best and ((epoch + 1) in eval_epochs_set) and (baseline_for_scoring is not None):
+                metrics_epoch = evaluate_and_print_metrics(
+                    model=model,
+                    is_mtl=is_mtl,
+                    retain_loader=retain_loader,
+                    test_loader=test_loader,
+                    device=device,
+                    forgotten_client_loaders=forgotten_client_loaders,
+                    current_forget_client_id=target_client_id,
+                )
+
+                # Map metrics to baseline keys
+                current_key = f"Digit acc on client {target_client_id} (newly forgotten)"
+                target_digit_acc = metrics_epoch.get(current_key, 0.0)
+                other_digit_acc = metrics_epoch.get("Digit accuracy on other subsets", 0.0)
+                test_digit_acc = metrics_epoch.get("Test set accuracy", 0.0)
+                current_metrics = {
+                    'target_digit_acc': target_digit_acc,
+                    'other_digit_acc': other_digit_acc,
+                    'test_digit_acc': test_digit_acc,
+                }
+                if is_mtl:
+                    other_subset_acc = metrics_epoch.get("Subset ID accuracy on other subsets", 0.0)
+                    current_metrics['other_subset_acc'] = other_subset_acc
+
+                delta_score = calculate_baseline_delta_score(
+                    current_metrics,
+                    baseline_for_scoring,
+                    num_forgotten_clients=num_forgotten_clients_for_scoring,
+                )
+
+                if (best_info is None) or (delta_score < best_info['delta']):
+                    best_info = {
+                        'delta': delta_score,
+                        'epoch': epoch + 1,
+                        'metrics': metrics_epoch,
+                        'state': copy.deepcopy(model.state_dict()),
+                    }
+
         print("\n--- Metrics after fine-tuning with current lambdas ---")
         metrics = evaluate_and_print_metrics(
             model=model,
@@ -178,13 +229,15 @@ def finetune_model(
             forgotten_client_loaders=forgotten_client_loaders,
             current_forget_client_id=target_client_id,
         )
+        if collect_best:
+            return metrics, best_info
         return metrics
 
     # Keep the initial model state so each grid run starts from the same baseline
     base_state_dict = copy.deepcopy(model.state_dict())
 
     if search_lambdas:
-        print("\n--- Fine-tuning entire model (grid search) ---")
+        print("\n--- Fine-tuning entire model (grid search over epochs and lambdas) ---")
         if not is_mtl:
             print("Note: Subset lambda has no effect in no-MTL; only digit lambda influences training.")
         best_score = None
@@ -221,39 +274,30 @@ def finetune_model(
 
         target_baseline = BASELINE_METRICS_ROUND_2 if num_forgotten_clients > 1 else BASELINE_METRICS_ROUND_1
 
-        for num_epochs in epochs_grid:
-            for ld in lambda_digit_grid:
-                for ls in lambda_subset_grid:
-                    print(f"\n>>> Trying epochs={num_epochs}, lambda_digit={ld}, lambda_subset={ls}")
-                    model.load_state_dict(base_state_dict)
-                    metrics = train_one_setting(ld, ls, num_epochs)
+        # Train once up to max epochs for each lambda pair and evaluate at intermediate epochs
+        max_epochs = max(epochs_grid) if epochs_grid else epochs
+        eval_epochs = epochs_grid if epochs_grid else [epochs]
 
-                    # Map current metrics to baseline keys
-                    current_key = f"Digit acc on client {target_client_id} (newly forgotten)"
-                    target_digit_acc = metrics.get(current_key, 0.0)
-                    other_digit_acc = metrics.get("Digit accuracy on other subsets", 0.0)
-                    test_digit_acc = metrics.get("Test set accuracy", 0.0)
-                    current_metrics = {
-                        'target_digit_acc': target_digit_acc,
-                        'other_digit_acc': other_digit_acc,
-                        'test_digit_acc': test_digit_acc,
-                    }
-                    if is_mtl:
-                        other_subset_acc = metrics.get("Subset ID accuracy on other subsets", 0.0)
-                        current_metrics['other_subset_acc'] = other_subset_acc
+        for ld in lambda_digit_grid:
+            for ls in lambda_subset_grid:
+                print(f"\n>>> Trying lambdas: lambda_digit={ld}, lambda_subset={ls}; training up to {max_epochs} epochs and evaluating at {eval_epochs}")
+                model.load_state_dict(base_state_dict)
+                _, best_info = train_one_setting(
+                    ld,
+                    ls,
+                    max_epochs,
+                    eval_epochs=eval_epochs,
+                    baseline_for_scoring=target_baseline,
+                    num_forgotten_clients_for_scoring=num_forgotten_clients,
+                    collect_best=True,
+                )
 
-                    delta_score = calculate_baseline_delta_score(
-                        current_metrics,
-                        target_baseline,
-                        num_forgotten_clients=num_forgotten_clients,
-                    )
-                    print(f"Delta to baseline: {delta_score:.6f}")
-
-                    if (best_score is None) or (delta_score < best_score):
-                        best_score = delta_score
-                        best_state = copy.deepcopy(model.state_dict())
+                if best_info is not None:
+                    if (best_score is None) or (best_info['delta'] < best_score):
+                        best_score = best_info['delta']
+                        best_state = best_info['state']
                         best_combo = (ld, ls)
-                        best_epochs = num_epochs
+                        best_epochs = best_info['epoch']
         # Load best weights
         if best_state is not None:
             model.load_state_dict(best_state)
