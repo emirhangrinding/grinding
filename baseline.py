@@ -212,3 +212,20 @@ def learn_baseline_excluding_3_clients(
 ):
     """Wrapper to exclude 3 clients."""
     return learn_baseline_excluding_clients(excluded_client_ids=[0, 1, 2], **kwargs)
+
+
+def learn_baseline_excluding_2_clients_ce_only(
+    **kwargs,
+):
+    """Wrapper to exclude 2 clients with CE-only MTL (disentanglement disabled)."""
+    kwargs.setdefault("lambda_dis", 0.0)
+    return learn_baseline_excluding_clients(excluded_client_ids=[0, 1], **kwargs)
+
+
+def learn_baseline_excluding_clients_ce_only(
+    excluded_client_ids,
+    **kwargs,
+):
+    """General wrapper to train CE-only MTL baseline with selected clients excluded."""
+    kwargs.setdefault("lambda_dis", 0.0)
+    return learn_baseline_excluding_clients(excluded_client_ids=excluded_client_ids, **kwargs)

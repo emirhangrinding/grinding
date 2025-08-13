@@ -60,14 +60,20 @@ def train_mtl_two_heads(model, train_loader, test_loader, device,
             # Calculate losses
             digit_loss = digit_criterion(digit_logits, digit_labels)
             subset_loss = subset_criterion(subset_logits, subset_labels)
-            loss_dis = intra_y1_y2_disentanglement_loss(embeddings, digit_labels, subset_labels, 
-                                                        lambda_pull, lambda_push)
+
+            # Compute disentanglement loss only if it will be used
+            if epoch >= 20 and lambda_dis > 0.0:
+                loss_dis_val = intra_y1_y2_disentanglement_loss(
+                    embeddings, digit_labels, subset_labels, lambda_pull, lambda_push
+                )
+            else:
+                loss_dis_val = torch.tensor(0.0, device=device)
 
             # ----- Conditional loss schedule (only digit loss for first 20 epochs) -----
             if epoch < 20:  # epochs indexed from 0, so epoch 0–19 => epochs 1–20
                 total_loss = lambda_1 * digit_loss
             else:
-                total_loss = lambda_1 * digit_loss + lambda_2 * subset_loss + lambda_dis * loss_dis
+                total_loss = lambda_1 * digit_loss + lambda_2 * subset_loss + lambda_dis * loss_dis_val
 
             # Backward and optimize
             total_loss.backward()
@@ -76,10 +82,7 @@ def train_mtl_two_heads(model, train_loader, test_loader, device,
             # Track metrics
             train_digit_loss += digit_loss.item() * inputs.size(0)
             train_subset_loss += subset_loss.item() * inputs.size(0)
-            if isinstance(loss_dis, torch.Tensor):
-                train_loss_dis += loss_dis.item() * inputs.size(0)
-            else:
-                train_loss_dis += loss_dis * inputs.size(0)
+            train_loss_dis += float(loss_dis_val.item()) * inputs.size(0)
 
             # Calculate accuracies
             _, digit_preds = torch.max(digit_logits, 1)
@@ -100,7 +103,11 @@ def train_mtl_two_heads(model, train_loader, test_loader, device,
         if epoch < 20:
             epoch_train_total_loss = lambda_1 * epoch_train_digit_loss  # matches optimisation objective
         else:
-            epoch_train_total_loss = lambda_1 * epoch_train_digit_loss + lambda_2 * epoch_train_subset_loss + lambda_dis * epoch_loss_dis
+            epoch_train_total_loss = (
+                lambda_1 * epoch_train_digit_loss
+                + lambda_2 * epoch_train_subset_loss
+                + lambda_dis * epoch_loss_dis
+            )
         epoch_train_digit_acc = train_digit_correct / train_samples
         epoch_train_subset_acc = train_subset_correct / train_samples
 
