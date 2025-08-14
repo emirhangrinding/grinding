@@ -151,15 +151,12 @@ def calculate_baseline_delta_score(current_metrics, baseline_metrics, weights=No
     if weights is None:
         # Default equal weights for all metrics
         weights = {
-            'target_digit_acc': 3.0,
+            'target_digit_acc': 1.0,
             'other_digit_acc': 1.0, 
             'target_subset_acc': 1.0,
             'other_subset_acc': 1.0,
             'test_digit_acc': 1.0
         }
-    
-    if num_forgotten_clients == 2:
-        weights['target_digit_acc'] = 1.0
     
     delta = 0.0
     total_weight = 0.0
