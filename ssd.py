@@ -140,6 +140,7 @@ def ssd_unlearn_subset(
     selection_weighting: float = 1.0,
     test_loader: DataLoader = None,
     calculate_fisher_on: str = "subset",
+    kill_output_neuron: bool = False,
     use_cached_unlearned_model: Optional[nn.Module] = None,
 ) -> tuple:
     """Apply Selective Synaptic Dampening (SSD) to forget a target subset.
@@ -178,6 +179,13 @@ def ssd_unlearn_subset(
 
     print("Applying synaptic dampening …")
     perturber.apply_dampening(imp_retain, imp_forget)
+
+    # Optionally prevent the model from predicting the target subset by
+    # suppressing its subset-head logit during evaluation.
+    if kill_output_neuron and (target_subset_id is not None):
+        if hasattr(unlearned_model, "kill_output_neuron") and hasattr(unlearned_model, "killed_subset_id"):
+            unlearned_model.kill_output_neuron = True
+            unlearned_model.killed_subset_id = int(target_subset_id)
 
     # Accuracy evaluation (post-dampening, pre-fine-tune)
     print("\nCalculating accuracies after dampening…")

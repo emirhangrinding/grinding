@@ -173,6 +173,12 @@ class MTL_Two_Heads_ResNet(nn.Module):
         # Subset identification head (num_clients classes)
         self.subset_head = _build_head(num_clients)
 
+        # Runtime controls for optionally suppressing one subset logit (by index)
+        # When enabled, the specified class logit is set to a very negative value
+        # during forward passes, effectively preventing that class from being predicted.
+        self.kill_output_neuron: bool = False
+        self.killed_subset_id: int | None = None
+
     def forward(self, x, return_features=True):
         # Shared encoding
         features = self.encoder(x)
@@ -185,6 +191,12 @@ class MTL_Two_Heads_ResNet(nn.Module):
         # Task-specific outputs
         digit_logits = self.digit_head(flattened)
         subset_logits = self.subset_head(flattened)
+
+        # Optionally suppress one subset class logit (e.g., the forgotten client's ID)
+        if self.kill_output_neuron and (self.killed_subset_id is not None):
+            if 0 <= int(self.killed_subset_id) < subset_logits.size(1):
+                subset_logits = subset_logits.clone()
+                subset_logits[:, int(self.killed_subset_id)] = -1e9
 
         if return_features:
             return digit_logits, subset_logits, flattened

@@ -94,6 +94,7 @@ def main():
     parser.add_argument("--disable-disentanglement", action="store_true", help="Disable disentanglement loss during baseline training")
     parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on during SSD: 'subset' or 'digit'")
     parser.add_argument("--ce-only", action="store_true", help="Use CE-only baseline model for unlearning (uses Kaggle CE-only weights if present; trains with lambda_dis=0.0 otherwise)")
+    parser.add_argument("--kill-output-neuron", action="store_true", help="If set, suppress the target subset's output neuron during evaluation after SSD.")
     args = parser.parse_args()
 
     print("Starting the full MTL workflow...")
@@ -140,6 +141,8 @@ def main():
     print("\n--- Step 2: Running SSD unlearning with Optuna tuning for MTL model ---")
     tune_script = "run_ssd_tuning.py"
     tune_command = f"python {tune_script} --model-path {baseline_model_path} --fisher-on {args.fisher_on}"
+    if args.kill_output_neuron:
+        tune_command += " --kill-output-neuron"
     
     try:
         subprocess.run(tune_command, shell=True, check=True)

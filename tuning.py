@@ -20,6 +20,8 @@ def optimise_ssd_hyperparams(
     num_forgotten_clients: int = 1,
     unlearned_model_name: str = "unlearned_model",
     all_forgotten_loaders: Optional[Dict[int, DataLoader]] = None,
+    *,
+    kill_output_neuron: bool = False,
 ):
     """Run TPE search to tune SSD hyper-parameters α (exponent) and λ (dampening_constant).
     The optimisation minimises the distance to baseline metrics based on the number of forgotten clients.
@@ -70,6 +72,7 @@ def optimise_ssd_hyperparams(
             dampening_constant=lam,
             test_loader=test_loader,
             calculate_fisher_on=calculate_fisher_on,
+            kill_output_neuron=kill_output_neuron,
         )
 
         model_state = io.BytesIO()
@@ -101,6 +104,7 @@ def optimise_ssd_hyperparams(
                     device,
                     test_loader=test_loader,
                     calculate_fisher_on=calculate_fisher_on,
+                    kill_output_neuron=kill_output_neuron,
                     use_cached_unlearned_model=unlearned_model # Crucially, use the model unlearned in THIS trial
                 )
                 
