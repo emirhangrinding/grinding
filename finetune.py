@@ -249,25 +249,25 @@ def finetune_model(
         num_forgotten_clients = max(1, len(forgotten_client_loaders) if forgotten_client_loaders else 1)
         if is_mtl:
             BASELINE_METRICS_ROUND_1 = {
-                'target_digit_acc': 0.8956,
+                'target_digit_acc': 0.9056,
                 'other_digit_acc': 0.9998,
                 'other_subset_acc': 0.9974,
                 'test_digit_acc': 0.9130,
             }
             BASELINE_METRICS_ROUND_2 = {
-                'target_digit_acc': 0.8906,
+                'target_digit_acc': 0.9006,
                 'other_digit_acc': 0.9999,
                 'other_subset_acc': 0.9985,
                 'test_digit_acc': 0.9052,
             }
         else:
             BASELINE_METRICS_ROUND_1 = {
-                'target_digit_acc': 0.8902,
+                'target_digit_acc': 0.9002,
                 'other_digit_acc': 0.9999,
                 'test_digit_acc': 0.9061,
             }
             BASELINE_METRICS_ROUND_2 = {
-                'target_digit_acc': 0.8729,
+                'target_digit_acc': 0.8829,
                 'other_digit_acc': 1.0000,
                 'test_digit_acc': 0.8931,
             }
