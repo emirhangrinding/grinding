@@ -22,6 +22,7 @@ def optimise_ssd_hyperparams(
     all_forgotten_loaders: Optional[Dict[int, DataLoader]] = None,
     *,
     kill_output_neuron: bool = False,
+    digit_metrics_only: bool = False,
 ):
     """Run TPE search to tune SSD hyper-parameters α (exponent) and λ (dampening_constant).
     The optimisation minimises the distance to baseline metrics based on the number of forgotten clients.
@@ -47,6 +48,14 @@ def optimise_ssd_hyperparams(
             'target_digit_acc': 0.8906, 'other_digit_acc': 0.9999,
             'other_subset_acc': 0.9985, 'test_digit_acc': 0.9052
         }
+
+    # Optionally ignore subset-ID metrics entirely for tuning objective
+    if digit_metrics_only:
+        def _filter_digit_only(metrics_dict):
+            allowed = {'target_digit_acc', 'other_digit_acc', 'test_digit_acc'}
+            return {k: v for k, v in metrics_dict.items() if k in allowed}
+        BASELINE_METRICS_ROUND_1 = _filter_digit_only(BASELINE_METRICS_ROUND_1)
+        BASELINE_METRICS_ROUND_2 = _filter_digit_only(BASELINE_METRICS_ROUND_2)
 
     print(f"Optimising SSD hyperparameters ({'no-MTL' if is_no_mtl else 'MTL'} case, for client {target_subset_id} ({num_forgotten_clients} forgotten total))")
     if num_forgotten_clients == 1:

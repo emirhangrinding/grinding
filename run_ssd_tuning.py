@@ -29,6 +29,7 @@ parser.add_argument("--unlearned-model-name", type=str, default="unlearned_model
 parser.add_argument("--previous-forgotten-clients", type=int, nargs='*', default=[], help="List of client IDs that were forgotten in previous rounds.")
 parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on: 'subset' or 'digit'.")
 parser.add_argument("--kill-output-neuron", action="store_true", help="If set, suppress the target subset's output neuron during evaluation after SSD.")
+parser.add_argument("--digit-metrics-only", action="store_true", help="If set, Optuna will optimize using only digit accuracies (ignores subset-ID metrics).")
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,6 +89,7 @@ study = optimise_ssd_hyperparams(
     unlearned_model_name=args.unlearned_model_name,
     all_forgotten_loaders=all_forgotten_loaders,
     kill_output_neuron=args.kill_output_neuron,
+    digit_metrics_only=args.digit_metrics_only,
 )
 
 print(f"Best α: {study.best_params['alpha']:.6f}")
