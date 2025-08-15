@@ -117,7 +117,7 @@ def finetune_model(
                     digit_logits_r, subset_logits_r, _ = model(inputs_r)
                     loss_digit_r = criterion(digit_logits_r, labels_r)
                     loss_subset_r = criterion(subset_logits_r, subset_labels_r)
-                    retain_loss = loss_digit_r + 2.0*loss_subset_r
+                    retain_loss = loss_digit_r + loss_subset_r
 
                     # --- Forget Set Loss (Adversarial: Encourage Forgetting) ---
                     inputs_f, labels_f, subset_labels_f = forget_batch
