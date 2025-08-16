@@ -129,7 +129,14 @@ def learn_baseline_no_mtl(
 
     # Print summary
     print("[BASELINE] ---------------------------------------------")
-    print(f"Digit accuracy on target subset: {target_digit_acc:.4f}")
+    # Per-client accuracies for excluded clients (no-MTL model): compute overall accuracy on each client's samples
+    for client_id in excluded_client_ids:
+        client_key = f"client{client_id + 1}"
+        client_dataset = Subset(full_dataset, clients_data[client_key])
+        client_loader = DataLoader(client_dataset, batch_size=batch_size)
+        client_acc = calculate_overall_digit_classification_accuracy(model, client_loader, device)
+        print(f"Digit accuracy on client{client_id + 1}: {client_acc:.4f}")
+
     print(f"Digit accuracy on other subsets (train): {train_digit_acc:.4f}")
     print(f"Digit accuracy on test set: {test_digit_acc:.4f}")
 

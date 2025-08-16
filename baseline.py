@@ -178,7 +178,18 @@ def learn_baseline_excluding_clients(
 
     # Print summary
     print("[BASELINE] ---------------------------------------------")
-    print(f"Digit accuracy on target subsets: {tgt_acc:.4f}")
+
+    # Per-client accuracies on the excluded (target) clients
+    for client_id in excluded_client_ids:
+        key = f"client{client_id + 1}"
+        client_only_dataset = MultiTaskDataset(full_dataset, {key: clients_data[key]})
+        client_only_loader = DataLoader(client_only_dataset, batch_size=batch_size)
+        # Compute per-client accuracy (treat the client's ID as the target subset)
+        client_tgt_acc, _ = calculate_digit_classification_accuracy(
+            model, client_only_loader, device, target_subset_id=client_id
+        )
+        print(f"Digit accuracy on client{client_id + 1}: {client_tgt_acc:.4f}")
+
     print(f"Digit accuracy on other subsets: {oth_acc:.4f}")
     print(f"Subset ID accuracy on target subsets: {sub_tgt_acc:.4f}")
     print(f"Subset ID accuracy on other subsets: {sub_oth_acc:.4f}")
