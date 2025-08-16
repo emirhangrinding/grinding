@@ -9,6 +9,7 @@ from training import train_mtl_two_heads
 from models import MTL_Two_Heads_ResNet
 from evaluation import (
     calculate_digit_classification_accuracy,
+    calculate_subset_identification_accuracy,
     calculate_subset_identification_accuracy_multiple_targets,
     calculate_overall_digit_classification_accuracy,
     get_membership_attack_prob_train_only,
@@ -189,6 +190,11 @@ def learn_baseline_excluding_clients(
             model, client_only_loader, device, target_subset_id=client_id
         )
         print(f"Digit accuracy on client{client_id + 1}: {client_tgt_acc:.4f}")
+        # Also report per-client subset-ID accuracy (MTL only)
+        client_sub_tgt_acc, _ = calculate_subset_identification_accuracy(
+            model, client_only_loader, device, target_subset_id=client_id
+        )
+        print(f"Subset ID accuracy on client{client_id + 1}: {client_sub_tgt_acc:.4f}")
 
     print(f"Digit accuracy on other subsets: {oth_acc:.4f}")
     print(f"Subset ID accuracy on target subsets: {sub_tgt_acc:.4f}")
