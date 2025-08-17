@@ -166,7 +166,7 @@ def main():
     args_cli, _ = parser.parse_known_args()
 
     tune_script = "run_ssd_tuning_no_mtl.py"
-    tune_command = f"python {tune_script} --model-path {baseline_model_path} --fisher-on {args_cli.fisher_on}"
+    tune_command = f"python {tune_script} --model-path {baseline_model_path} --fisher-on {args_cli.fisher_on} --baseline-variant no_mtl"
     
     try:
         subprocess.run(tune_command, shell=True, check=True)

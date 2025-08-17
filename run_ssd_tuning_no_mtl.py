@@ -26,6 +26,7 @@ parser.add_argument("--num-forgotten-clients", type=int, default=1, help="The nu
 parser.add_argument("--unlearned-model-name", type=str, default="unlearned_model_no_mtl", help="Name for the output unlearned model file.")
 parser.add_argument("--previous-forgotten-clients", type=int, nargs='*', default=[], help="List of client IDs that were forgotten in previous rounds.")
 parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on: 'subset' or 'digit'.")
+parser.add_argument("--baseline-variant", type=str, choices=["mtl", "mtl_ce", "no_mtl"], default="no_mtl", help="Baseline set to use for sequential forgetting metrics.")
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,6 +93,7 @@ study = optimise_ssd_hyperparams(
     num_forgotten_clients=args.num_forgotten_clients,
     unlearned_model_name=args.unlearned_model_name,
     all_forgotten_loaders=all_forgotten_loaders,
+    baseline_variant=args.baseline_variant,
 )
 
 print(f"Best α: {study.best_params['alpha']:.6f}")

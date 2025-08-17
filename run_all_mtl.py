@@ -142,6 +142,11 @@ def main():
     print("\n--- Step 2: Running SSD unlearning with Optuna tuning for MTL model ---")
     tune_script = "run_ssd_tuning.py"
     tune_command = f"python {tune_script} --model-path {baseline_model_path} --fisher-on {args.fisher_on}"
+    # Select baseline variant for tuning metrics
+    if args.ce_only or args.disable_disentanglement:
+        tune_command += " --baseline-variant mtl_ce"
+    else:
+        tune_command += " --baseline-variant mtl"
     if args.kill_output_neuron:
         tune_command += " --kill-output-neuron"
     if args.digit_metrics_only:

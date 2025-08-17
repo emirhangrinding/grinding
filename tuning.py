@@ -23,30 +23,59 @@ def optimise_ssd_hyperparams(
     *,
     kill_output_neuron: bool = False,
     digit_metrics_only: bool = False,
+    baseline_variant: Optional[str] = None,  # one of {"mtl", "mtl_ce", "no_mtl"}
 ):
     """Run TPE search to tune SSD hyper-parameters α (exponent) and λ (dampening_constant).
     The optimisation minimises the distance to baseline metrics based on the number of forgotten clients.
     Lower score ⇒ closer to baseline performance.
     """
 
-    is_no_mtl = (target_subset_id is None)
+    # Infer baseline variant if not provided
+    inferred_no_mtl = (target_subset_id is None)
+    if baseline_variant is None:
+        baseline_variant = "no_mtl" if inferred_no_mtl else "mtl"
 
-    # Define baseline metrics for different stages of forgetting
-    if is_no_mtl:
+    is_no_mtl = (baseline_variant == "no_mtl")
+
+    # Define baseline metrics for different stages (Rounds 1-3)
+    if baseline_variant == "no_mtl":
+        # No-MTL baselines (baseline_all_clients_model.h5)
         BASELINE_METRICS_ROUND_1 = {
-            'target_digit_acc': 0.8902, 'other_digit_acc': 0.9999, 'test_digit_acc': 0.9061
+            'target_digit_acc': 0.8983, 'other_digit_acc': 0.9999, 'test_digit_acc': 0.9061
         }
         BASELINE_METRICS_ROUND_2 = {
-            'target_digit_acc': 0.8729, 'other_digit_acc': 1.0000, 'test_digit_acc': 0.8931
+            'target_digit_acc': 0.8784, 'other_digit_acc': 1.0000, 'test_digit_acc': 0.8931
         }
-    else: # MTL
+        BASELINE_METRICS_ROUND_3 = {
+            'target_digit_acc': 0.8912, 'other_digit_acc': 0.9999, 'test_digit_acc': 0.8919
+        }
+    elif baseline_variant == "mtl_ce":
+        # MTL (CE-only) baselines (baseline_mtl_all_clients_no_dis.h5)
         BASELINE_METRICS_ROUND_1 = {
-            'target_digit_acc': 0.8956, 'other_digit_acc': 0.9998, 
-            'other_subset_acc': 0.9974, 'test_digit_acc': 0.9130
+            'target_digit_acc': 0.8975, 'other_digit_acc': 0.9995,
+            'target_subset_acc': 0.0000, 'other_subset_acc': 0.9909, 'test_digit_acc': 0.9042
         }
         BASELINE_METRICS_ROUND_2 = {
-            'target_digit_acc': 0.8906, 'other_digit_acc': 0.9999,
-            'other_subset_acc': 0.9985, 'test_digit_acc': 0.9052
+            'target_digit_acc': 0.8843, 'other_digit_acc': 0.9995,
+            'target_subset_acc': 0.0000, 'other_subset_acc': 0.9940, 'test_digit_acc': 0.8986
+        }
+        BASELINE_METRICS_ROUND_3 = {
+            'target_digit_acc': 0.8983, 'other_digit_acc': 0.9981,
+            'target_subset_acc': 0.0000, 'other_subset_acc': 0.9735, 'test_digit_acc': 0.8869
+        }
+    else:
+        # Standard MTL baselines (baseline_mtl_all_clients.h5)
+        BASELINE_METRICS_ROUND_1 = {
+            'target_digit_acc': 0.9037, 'other_digit_acc': 0.9998,
+            'target_subset_acc': 0.0000, 'other_subset_acc': 0.9974, 'test_digit_acc': 0.9130
+        }
+        BASELINE_METRICS_ROUND_2 = {
+            'target_digit_acc': 0.8945, 'other_digit_acc': 0.9999,
+            'target_subset_acc': 0.0000, 'other_subset_acc': 0.9985, 'test_digit_acc': 0.9052
+        }
+        BASELINE_METRICS_ROUND_3 = {
+            'target_digit_acc': 0.8993, 'other_digit_acc': 0.9981,
+            'target_subset_acc': 0.0000, 'other_subset_acc': 0.9735, 'test_digit_acc': 0.8969
         }
 
     # Optionally ignore subset-ID metrics entirely for tuning objective
@@ -56,12 +85,20 @@ def optimise_ssd_hyperparams(
             return {k: v for k, v in metrics_dict.items() if k in allowed}
         BASELINE_METRICS_ROUND_1 = _filter_digit_only(BASELINE_METRICS_ROUND_1)
         BASELINE_METRICS_ROUND_2 = _filter_digit_only(BASELINE_METRICS_ROUND_2)
+        # Round 3 may not exist in some variants; guard accordingly
+        try:
+            BASELINE_METRICS_ROUND_3 = _filter_digit_only(BASELINE_METRICS_ROUND_3)
+        except NameError:
+            pass
 
     print(f"Optimising SSD hyperparameters ({'no-MTL' if is_no_mtl else 'MTL'} case, for client {target_subset_id} ({num_forgotten_clients} forgotten total))")
     if num_forgotten_clients == 1:
         print(f"Target baseline metrics (Round 1): {BASELINE_METRICS_ROUND_1}")
-    else:
+    elif num_forgotten_clients == 2:
         print(f"Target baseline metrics (Round 2): {BASELINE_METRICS_ROUND_2}")
+        print(f"Also ensuring Round 1 metrics are maintained for previously forgotten clients.")
+    else:
+        print(f"Target baseline metrics (Round 3): {BASELINE_METRICS_ROUND_3}")
         print(f"Also ensuring Round 1 metrics are maintained for previously forgotten clients.")
 
     sampler = optuna.samplers.TPESampler(seed=seed, n_startup_trials=10, n_ei_candidates=24)
@@ -91,7 +128,12 @@ def optimise_ssd_hyperparams(
         total_delta_score = 0
         
         # --- Stage 1: Evaluate the primary client being forgotten NOW ---
-        primary_baseline = BASELINE_METRICS_ROUND_2 if num_forgotten_clients > 1 else BASELINE_METRICS_ROUND_1
+        if num_forgotten_clients == 1:
+            primary_baseline = BASELINE_METRICS_ROUND_1
+        elif num_forgotten_clients == 2:
+            primary_baseline = BASELINE_METRICS_ROUND_2
+        else:
+            primary_baseline = BASELINE_METRICS_ROUND_3
         primary_metrics_tuning = {key: initial_ssd_metrics[key] for key in primary_baseline}
         primary_delta_score = calculate_baseline_delta_score(
             primary_metrics_tuning, primary_baseline, num_forgotten_clients=num_forgotten_clients
@@ -142,7 +184,12 @@ def optimise_ssd_hyperparams(
     print(f"Best combined delta score: {study.best_value:.6f}")
 
     best_trial = study.best_trial
-    baseline_to_print = BASELINE_METRICS_ROUND_2 if num_forgotten_clients > 1 else BASELINE_METRICS_ROUND_1
+    if num_forgotten_clients == 1:
+        baseline_to_print = BASELINE_METRICS_ROUND_1
+    elif num_forgotten_clients == 2:
+        baseline_to_print = BASELINE_METRICS_ROUND_2
+    else:
+        baseline_to_print = BASELINE_METRICS_ROUND_3
     print("\nBest trial metrics vs baseline for current forgotten client:")
     for key in baseline_to_print:
         current_val = best_trial.user_attrs[key]
