@@ -33,7 +33,7 @@ def pull_to_means(z, y):
     Returns average distance of points to their class mean.
     """
     unique_classes = y.unique()
-    loss = 0.0
+    loss = torch.tensor(0.0, device=z.device)
     for cls in unique_classes:
         idx = (y == cls)
         if idx.sum() < 2:
@@ -41,7 +41,10 @@ def pull_to_means(z, y):
         class_embeddings = z[idx]                      # [n_c, D]
         class_mean = class_embeddings.mean(dim=0)      # [D]
         distances = (class_embeddings - class_mean).pow(2).sum(dim=1)  # [n_c]
-        loss += distances.mean()
+        loss = loss + distances.mean()
+    # Avoid division by zero just in case
+    if len(unique_classes) == 0:
+        return torch.tensor(0.0, device=z.device)
     return loss / len(unique_classes)
 
 def push_from_means(z, y, margin=1.0):
@@ -71,14 +74,14 @@ def push_from_means(z, y, margin=1.0):
     
     # We only care about unique pairs (i < j)
     num_classes = means.size(0)
-    push_loss = 0.0
+    push_loss = torch.tensor(0.0, device=z.device)
     count = 0
 
     for i in range(num_classes):
         for j in range(i + 1, num_classes):
             dist = dists[i, j]
             if dist < margin:
-                push_loss += (margin - dist).pow(2)
+                push_loss = push_loss + (margin - dist).pow(2)
                 count += 1
 
     if count == 0:
@@ -100,7 +103,7 @@ def intra_y1_y2_disentanglement_loss(z, y1, y2, lambda_pull=1.0, lambda_push=1.0
     For each y1 class, compute pull and push losses using y2 as the grouping label.
     This encourages within-class subset separation while maintaining cross-class structure.
     """
-    loss = 0.0
+    loss = torch.tensor(0.0, device=z.device)
     margin = 1.0  # Hinge loss margin
     unique_y1 = y1.unique()
     for y1_class in unique_y1:
@@ -111,8 +114,10 @@ def intra_y1_y2_disentanglement_loss(z, y1, y2, lambda_pull=1.0, lambda_push=1.0
         y2_group = y2[idx]
         pull_loss = pull_to_means(z_group, y2_group)
         push_loss = push_from_means(z_group, y2_group, margin=margin)
-        loss += lambda_pull * pull_loss + lambda_push * push_loss
-
+        loss = loss + (lambda_pull * pull_loss + lambda_push * push_loss)
+    # Avoid division by zero just in case
+    if len(unique_y1) == 0:
+        return torch.tensor(0.0, device=z.device)
     return loss / len(unique_y1)
 
 def dirichlet_partition(dataset, num_clients=10, alpha=0.6, num_classes=10, seed=42):
