@@ -34,6 +34,10 @@ def run_sequential_forgetting(
     override_unlearned_model_path=None,
     lambda_digit: float = 0.3,
     lambda_subset: float = 0.2,
+    *,
+    baseline_variant: str = None,
+    kill_output_neuron: bool = True,
+    digit_metrics_only: bool = False,
 ):
     """
     Performs sequential unlearning on a list of clients.
@@ -60,6 +64,10 @@ def run_sequential_forgetting(
     else:
         test_base = CIFAR10(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
     test_loader = DataLoader(test_base, batch_size=BATCH_SIZE, shuffle=False)
+
+    # Infer baseline variant if not provided
+    if baseline_variant is None:
+        baseline_variant = "mtl_ce" if ("no_dis" in os.path.basename(baseline_model_path)) else "mtl"
 
     for i, client_id in enumerate(clients_to_forget):
         num_forgotten = i + 1
@@ -93,8 +101,12 @@ def run_sequential_forgetting(
                 f"--num-forgotten-clients {num_forgotten} "
                 f"--unlearned-model-name {unlearned_model_name} "
                 f"--previous-forgotten-clients {previous_forgotten_clients_arg} "
-                f"--current-client-id {client_id}"
+                f"--current-client-id {client_id} "
+                f"--baseline-variant {baseline_variant} "
+                f"--kill-output-neuron"
             )
+            if digit_metrics_only:
+                tune_command += " --digit-metrics-only"
             try:
                 subprocess.run(tune_command, shell=True, check=True)
                 print(f"--- Successfully completed SSD tuning for client {client_id} ---")
@@ -158,8 +170,9 @@ def run_sequential_forgetting(
             epochs=FINETUNE_EPOCHS,
             lr=LR,
             lambda_digit=lambda_digit,
-            lambda_subset=lambda_subset,
+            lambda_subset=0.0,
             device=device,
+            baseline_variant=baseline_variant,
         )
 
         # Save the fine-tuned model, making it the input for the next round
@@ -172,53 +185,24 @@ def run_sequential_forgetting(
     print("\n--- Sequential forgetting workflow completed! ---")
 
 if __name__ == "__main__":
-    # CLI for lambda overrides with env fallbacks
-    parser = argparse.ArgumentParser(description="Sequential forgetting with optional lambda overrides")
-    parser.add_argument("--lambda-digit", dest="lambda_digit", type=float, default=None, help="Weight for adversarial digit loss")
-    parser.add_argument("--lambda-subset", dest="lambda_subset", type=float, default=None, help="Weight for adversarial subset loss")
-    # Parse known args only to avoid interfering with other external arg parsers
-    args, _ = parser.parse_known_args()
+    parser = argparse.ArgumentParser(description="Sequential forgetting for MTL with per-round baselines")
+    parser.add_argument("--clients", type=int, nargs="+", default=[0, 1, 2], help="Client IDs to forget in order (rounds)")
+    parser.add_argument("--baseline-model-path", type=str, default=os.environ.get("BASELINE_MODEL_PATH", "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5"), help="Path to the baseline MTL model")
+    parser.add_argument("--initial-unlearned-model-path", type=str, default=os.environ.get("INITIAL_UNLEARNED_MODEL_PATH", None), help="Optional: precomputed unlearned model for the first round")
+    parser.add_argument("--baseline-variant", type=str, choices=["mtl", "mtl_ce"], default=None, help="Baseline variant to use (mtl or mtl_ce)")
+    parser.add_argument("--lambda-digit", dest="lambda_digit", type=float, default=None, help="Weight for adversarial digit loss (default 0.3)")
+    parser.add_argument("--digit-metrics-only", action="store_true", help="Use only digit metrics during SSD tuning objective")
+    args = parser.parse_args()
 
-    # Default paths (can be overridden via environment variables below)
-    baseline_model = os.environ.get(
-        "BASELINE_MODEL_PATH",
-        "/kaggle/input/mtl/pytorch/default/1/baseline_mtl_all_clients.h5",
-    )
-    initial_unlearned_model = os.environ.get(
-        "INITIAL_UNLEARNED_MODEL_PATH",
-        "/kaggle/input/unlearned/pytorch/default/1/unlearned_model_mtl.h5",
-    )
-
-    # Resolve lambdas from CLI or env (env var names match CLI flags but uppercase)
     resolved_lambda_digit = args.lambda_digit if args.lambda_digit is not None else float(os.environ.get("LAMBDA_DIGIT", "0.3"))
-    resolved_lambda_subset = args.lambda_subset if args.lambda_subset is not None else float(os.environ.get("LAMBDA_SUBSET", "0.2"))
 
-    print(f"Using lambda_digit={resolved_lambda_digit}, lambda_subset={resolved_lambda_subset}")
-
-    # Support a simple round-2-only finetuning flow via environment variables
-    # Set ROUND2_ONLY=1 and provide ROUND2_UNLEARNED_MODEL_PATH to skip SSD and only fine-tune.
-    if os.environ.get("ROUND2_ONLY", "0") == "1":
-        round2_path = os.environ.get("ROUND2_UNLEARNED_MODEL_PATH")
-        if not round2_path or not os.path.exists(round2_path):
-            raise FileNotFoundError(
-                "ROUND2_ONLY is set but ROUND2_UNLEARNED_MODEL_PATH is missing or does not exist."
-            )
-        # Previously forgotten client 0; now fine-tune after forgetting client 1 as well
-        run_sequential_forgetting(
-            clients_to_forget=[1],
-            baseline_model_path=baseline_model,
-            initial_unlearned_model_path=None,
-            initial_forgotten_clients=[0],
-            override_unlearned_model_path=round2_path,
-            lambda_digit=resolved_lambda_digit,
-            lambda_subset=resolved_lambda_subset,
-        )
-    else:
-        # Full two-round flow by default
-        run_sequential_forgetting(
-            clients_to_forget=[0, 1],
-            baseline_model_path=baseline_model,
-            initial_unlearned_model_path=initial_unlearned_model,
-            lambda_digit=resolved_lambda_digit,
-            lambda_subset=resolved_lambda_subset,
-        )
+    run_sequential_forgetting(
+        clients_to_forget=args.clients,
+        baseline_model_path=args.baseline_model_path,
+        initial_unlearned_model_path=args.initial_unlearned_model_path,
+        lambda_digit=resolved_lambda_digit,
+        lambda_subset=0.0,
+        baseline_variant=args.baseline_variant,
+        kill_output_neuron=True,
+        digit_metrics_only=args.digit_metrics_only,
+    )

@@ -81,7 +81,8 @@ def run_sequential_forgetting_no_mtl(
                 f"--num-forgotten-clients {num_forgotten} "
                 f"--unlearned-model-name {unlearned_model_name} "
                 f"--previous-forgotten-clients {previous_forgotten_clients_arg} "
-                f"--current-client-id {client_id}"
+                f"--current-client-id {client_id} "
+                f"--baseline-variant no_mtl"
             )
             try:
                 subprocess.run(tune_command, shell=True, check=True)
@@ -141,6 +142,7 @@ def run_sequential_forgetting_no_mtl(
             epochs=FINETUNE_EPOCHS,
             lr=LR,
             device=device,
+            baseline_variant="no_mtl",
         )
 
         # Save the fine-tuned model
@@ -153,14 +155,15 @@ def run_sequential_forgetting_no_mtl(
     print("\n--- Sequential forgetting workflow (no-MTL) completed! ---")
 
 if __name__ == "__main__":
-    clients_to_forget_seq = [0, 1] 
-    
-    baseline_model = "/kaggle/input/no-mtl/pytorch/default/1/baseline_all_clients_model.h5"
-    initial_unlearned_model = "/kaggle/input/unlearned-no-mtl/pytorch/default/1/unlearned_model_no_mtl.h5"
-
+    import argparse
+    parser = argparse.ArgumentParser(description="Sequential forgetting for no-MTL with per-round baselines")
+    parser.add_argument("--clients", type=int, nargs="+", default=[0, 1, 2], help="Client IDs to forget in order (rounds)")
+    parser.add_argument("--baseline-model-path", type=str, default=os.environ.get("BASELINE_MODEL_PATH", "/kaggle/input/no-mtl/pytorch/default/1/baseline_all_clients_model.h5"), help="Path to the baseline no-MTL model")
+    parser.add_argument("--initial-unlearned-model-path", type=str, default=os.environ.get("INITIAL_UNLEARNED_MODEL_PATH", None), help="Optional: precomputed unlearned model for the first round")
+    args = parser.parse_args()
 
     run_sequential_forgetting_no_mtl(
-        clients_to_forget_seq, 
-        baseline_model,
-        initial_unlearned_model_path=initial_unlearned_model
+        clients_to_forget=args.clients,
+        baseline_model_path=args.baseline_model_path,
+        initial_unlearned_model_path=args.initial_unlearned_model_path,
     )
