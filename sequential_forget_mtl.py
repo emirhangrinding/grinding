@@ -147,6 +147,14 @@ def run_sequential_forgetting(
         model_to_finetune = MTL_Two_Heads_ResNet(dataset_name=DATASET_NAME, num_clients=NUM_CLIENTS, head_size=HEAD_SIZE)
         model_to_finetune.load_state_dict(torch.load(unlearned_model_path, map_location=device))
         model_to_finetune.to(device)
+        # Ensure subset neurons for all forgotten clients are suppressed during eval and finetuning
+        if hasattr(model_to_finetune, "kill_output_neuron"):
+            model_to_finetune.kill_output_neuron = True
+            if hasattr(model_to_finetune, "killed_subset_ids"):
+                model_to_finetune.killed_subset_ids = set(forgotten_clients)
+            elif hasattr(model_to_finetune, "killed_subset_id") and len(forgotten_clients) > 0:
+                # Fallback: only suppress the latest client if multiple masking unsupported
+                model_to_finetune.killed_subset_id = int(client_id)
 
         # Evaluate metrics *before* fine-tuning
         print(f"\n--- Metrics BEFORE fine-tuning (after unlearning client {client_id}) ---")

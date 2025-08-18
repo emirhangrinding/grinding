@@ -178,6 +178,8 @@ class MTL_Two_Heads_ResNet(nn.Module):
         # during forward passes, effectively preventing that class from being predicted.
         self.kill_output_neuron: bool = False
         self.killed_subset_id: int | None = None
+        # Support masking multiple subset IDs across rounds of forgetting
+        self.killed_subset_ids = set()
 
     def forward(self, x, return_features=True):
         # Shared encoding
@@ -193,10 +195,19 @@ class MTL_Two_Heads_ResNet(nn.Module):
         subset_logits = self.subset_head(flattened)
 
         # Optionally suppress one subset class logit (e.g., the forgotten client's ID)
-        if self.kill_output_neuron and (self.killed_subset_id is not None):
-            if 0 <= int(self.killed_subset_id) < subset_logits.size(1):
+        if self.kill_output_neuron:
+            # Build the full set of indices to suppress (single legacy id + multi-id set)
+            to_suppress = set()
+            if self.killed_subset_id is not None:
+                to_suppress.add(int(self.killed_subset_id))
+            if hasattr(self, "killed_subset_ids") and self.killed_subset_ids:
+                to_suppress.update(int(i) for i in self.killed_subset_ids)
+            if to_suppress:
                 subset_logits = subset_logits.clone()
-                subset_logits[:, int(self.killed_subset_id)] = -1e9
+                num_classes = subset_logits.size(1)
+                for idx in to_suppress:
+                    if 0 <= idx < num_classes:
+                        subset_logits[:, idx] = -1e9
 
         if return_features:
             return digit_logits, subset_logits, flattened

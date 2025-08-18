@@ -28,6 +28,8 @@ def run_sequential_forgetting_no_mtl(
     clients_to_forget,
     baseline_model_path,
     initial_unlearned_model_path=None,
+    *,
+    calculate_fisher_on: str = "digit",
 ):
     """
     Performs sequential unlearning on a list of clients for a no-MTL model.
@@ -84,8 +86,8 @@ def run_sequential_forgetting_no_mtl(
                 f"--current-client-id {client_id} "
                 f"--baseline-variant no_mtl"
             )
-            if args.fisher_on:
-                tune_command += f" --fisher-on {args.fisher_on}"
+            if calculate_fisher_on:
+                tune_command += f" --fisher-on {calculate_fisher_on}"
             try:
                 subprocess.run(tune_command, shell=True, check=True)
                 print(f"--- Successfully completed SSD tuning for client {client_id} ---")
@@ -169,4 +171,5 @@ if __name__ == "__main__":
         clients_to_forget=args.clients,
         baseline_model_path=args.baseline_model_path,
         initial_unlearned_model_path=args.initial_unlearned_model_path,
+        calculate_fisher_on=args.fisher_on,
     )
