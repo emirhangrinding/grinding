@@ -28,7 +28,7 @@ def finetune_model(
     epochs=1,
     lr=1e-4,
     lambda_digit=0.3,  # Weight for the adversarial digit loss
-    lambda_subset=0.05, # Weight for the adversarial subset ID loss
+    lambda_subset=0.05, # Deprecated: adversarial subset loss removed; kept for API compatibility
     seed=42,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     # Grid search controls (used only for MTL)
@@ -37,6 +37,7 @@ def finetune_model(
     lambda_subset_grid=None,
     epochs_grid=None,
     save_best_model_path: str = None,
+    baseline_variant: str = None,
 ):
     """
     Fine-tunes a model after unlearning, using retain data from the remaining clients
@@ -62,9 +63,104 @@ def finetune_model(
     if lambda_digit_grid is None:
         lambda_digit_grid = [0.0, 0.05, 0.1, 0.3, 0.5]
     if lambda_subset_grid is None:
-        lambda_subset_grid = [0.0, 0.05, 0.1, 0.2] if is_mtl else [0.0]
+        # Subset adversarial term is disabled; keep grid at 0.0 for compatibility
+        lambda_subset_grid = [0.0]
     if epochs_grid is None:
-        epochs_grid = [1, 2, 3]
+        # Include 0 to consider the non-finetuned model as a candidate
+        epochs_grid = [0, 1, 2, 3]
+
+    # --- Build per-round, per-client baselines consistent with tuning ---
+    # Infer baseline variant if not provided
+    if baseline_variant is None:
+        baseline_variant = "no_mtl" if not is_mtl else "mtl"
+
+    def _build_baselines_map(variant: str):
+        if variant == "no_mtl":
+            return {
+                1: {
+                    'per_client_target_digit_acc': {0: 0.8983},
+                    'other_digit_acc': 0.9999,
+                    'test_digit_acc': 0.9061,
+                },
+                2: {
+                    'per_client_target_digit_acc': {0: 0.8951, 1: 0.8784},
+                    'other_digit_acc': 1.0000,
+                    'test_digit_acc': 0.8931,
+                },
+                3: {
+                    'per_client_target_digit_acc': {0: 0.8757, 1: 0.8745, 2: 0.8912},
+                    'other_digit_acc': 0.9999,
+                    'test_digit_acc': 0.8919,
+                },
+            }
+        elif variant == "mtl_ce":
+            return {
+                1: {
+                    'per_client_target_digit_acc': {0: 0.8975},
+                    'other_digit_acc': 0.9995,
+                    'target_subset_acc': 0.0000,
+                    'other_subset_acc': 0.9909,
+                    'test_digit_acc': 0.9042,
+                },
+                2: {
+                    'per_client_target_digit_acc': {0: 0.8967, 1: 0.8843},
+                    'other_digit_acc': 0.9995,
+                    'target_subset_acc': 0.0000,
+                    'other_subset_acc': 0.9940,
+                    'test_digit_acc': 0.8986,
+                },
+                3: {
+                    'per_client_target_digit_acc': {0: 0.8761, 1: 0.8765, 2: 0.8983},
+                    'other_digit_acc': 0.9981,
+                    'target_subset_acc': 0.0000,
+                    'other_subset_acc': 0.9735,
+                    'test_digit_acc': 0.8869,
+                },
+            }
+        else:  # "mtl"
+            return {
+                1: {
+                    'per_client_target_digit_acc': {0: 0.9037},
+                    'other_digit_acc': 0.9998,
+                    'target_subset_acc': 0.0000,
+                    'other_subset_acc': 0.9974,
+                    'test_digit_acc': 0.9130,
+                },
+                2: {
+                    'per_client_target_digit_acc': {0: 0.9107, 1: 0.8945},
+                    'other_digit_acc': 0.9999,
+                    'target_subset_acc': 0.0000,
+                    'other_subset_acc': 0.9985,
+                    'test_digit_acc': 0.9052,
+                },
+                3: {
+                    'per_client_target_digit_acc': {0: 0.9006, 1: 0.8945, 2: 0.9148},
+                    'other_digit_acc': 0.9996,
+                    'target_subset_acc': 0.0000,
+                    'other_subset_acc': 0.9966,
+                    'test_digit_acc': 0.9025,
+                },
+            }
+
+    BASELINES = _build_baselines_map(baseline_variant)
+
+    def _make_client_round_baseline(round_idx: int, client_id: int):
+        round_info = BASELINES[round_idx]
+        client_map = round_info.get('per_client_target_digit_acc', {})
+        if client_id not in client_map:
+            target_acc = client_map[sorted(client_map.keys())[-1]] if client_map else 0.0
+        else:
+            target_acc = client_map[client_id]
+        baseline = {
+            'target_digit_acc': target_acc,
+            'other_digit_acc': round_info.get('other_digit_acc', None),
+            'test_digit_acc': round_info.get('test_digit_acc', None),
+        }
+        if is_mtl:
+            baseline.update({
+                'other_subset_acc': round_info.get('other_subset_acc', None),
+            })
+        return {k: v for k, v in baseline.items() if v is not None}
 
     def score_from_metrics(metrics_dict: dict):
         test_acc = metrics_dict.get("Test set accuracy", 0.0)
@@ -95,6 +191,41 @@ def finetune_model(
 
         best_info = None
         eval_epochs_set = set(eval_epochs) if eval_epochs is not None else set()
+
+        # Evaluate at epoch 0 if requested (no fine-tuning candidate)
+        if collect_best and (0 in eval_epochs_set) and (baseline_for_scoring is not None):
+            metrics_epoch0 = evaluate_and_print_metrics(
+                model=model,
+                is_mtl=is_mtl,
+                retain_loader=retain_loader,
+                test_loader=test_loader,
+                device=device,
+                forgotten_client_loaders=forgotten_client_loaders,
+                current_forget_client_id=target_client_id,
+            )
+            current_key0 = f"Digit acc on client {target_client_id} (newly forgotten)"
+            target_digit_acc0 = metrics_epoch0.get(current_key0, 0.0)
+            other_digit_acc0 = metrics_epoch0.get("Digit accuracy on other subsets", 0.0)
+            test_digit_acc0 = metrics_epoch0.get("Test set accuracy", 0.0)
+            current_metrics0 = {
+                'target_digit_acc': target_digit_acc0,
+                'other_digit_acc': other_digit_acc0,
+                'test_digit_acc': test_digit_acc0,
+            }
+            if is_mtl:
+                other_subset_acc0 = metrics_epoch0.get("Subset ID accuracy on other subsets", 0.0)
+                current_metrics0['other_subset_acc'] = other_subset_acc0
+            delta_score0 = calculate_baseline_delta_score(
+                current_metrics0,
+                baseline_for_scoring,
+                num_forgotten_clients=num_forgotten_clients_for_scoring,
+            )
+            best_info = {
+                'delta': delta_score0,
+                'epoch': 0,
+                'metrics': metrics_epoch0,
+                'state': copy.deepcopy(model.state_dict()),
+            }
 
         for epoch in range(num_epochs):
             model.train()
@@ -128,16 +259,19 @@ def finetune_model(
                     with torch.no_grad():
                         _, digit_preds_f = torch.max(digit_logits_f, 1)
                         batch_acc_f = (digit_preds_f == labels_f).float().mean().item()
-                        digit_excess = max(0.0, batch_acc_f - baseline_digit_acc_forget)
+                        # Compare against per-round target baseline for this client
+                        current_round = min(max(len(forgotten_client_loaders), 1), 3) if forgotten_client_loaders else 1
+                        round_baseline = _make_client_round_baseline(current_round, target_client_id)
+                        baseline_target_acc = round_baseline.get('target_digit_acc', 0.0)
+                        digit_excess = max(0.0, batch_acc_f - baseline_target_acc)
 
                     digit_loss_f = criterion(digit_logits_f, labels_f)
-                    subset_loss_f = criterion(subset_logits_f, subset_labels_f)
 
                     # --- Combined Loss ---
+                    # Subset adversarial term removed (subset output neuron is suppressed post-SSD)
                     loss = (
                         retain_loss
                         - ((current_lambda_digit * digit_excess) * digit_loss_f)
-                        - (current_lambda_subset * subset_loss_f)
                     )
                 else:
                     # --- Retain Set Loss (Encourage Learning) ---
@@ -154,7 +288,10 @@ def finetune_model(
                     with torch.no_grad():
                         _, digit_preds_f = torch.max(outputs_f, 1)
                         batch_acc_f = (digit_preds_f == labels_f).float().mean().item()
-                        digit_excess = max(0.0, batch_acc_f - baseline_digit_acc_forget)
+                        current_round = min(max(len(forgotten_client_loaders), 1), 3) if forgotten_client_loaders else 1
+                        round_baseline = _make_client_round_baseline(current_round, target_client_id)
+                        baseline_target_acc = round_baseline.get('target_digit_acc', 0.0)
+                        digit_excess = max(0.0, batch_acc_f - baseline_target_acc)
 
                     digit_loss_f = criterion(outputs_f, labels_f)
 
@@ -245,34 +382,10 @@ def finetune_model(
         best_combo = None
         best_epochs = None
 
-        # Select baseline metrics based on stage and MTL setting
+        # Select baseline metrics based on current round (1..3) and per-client
         num_forgotten_clients = max(1, len(forgotten_client_loaders) if forgotten_client_loaders else 1)
-        if is_mtl:
-            BASELINE_METRICS_ROUND_1 = {
-                'target_digit_acc': 0.9056,
-                'other_digit_acc': 0.9998,
-                'other_subset_acc': 0.9974,
-                'test_digit_acc': 0.9130,
-            }
-            BASELINE_METRICS_ROUND_2 = {
-                'target_digit_acc': 0.9006,
-                'other_digit_acc': 0.9999,
-                'other_subset_acc': 0.9985,
-                'test_digit_acc': 0.9052,
-            }
-        else:
-            BASELINE_METRICS_ROUND_1 = {
-                'target_digit_acc': 0.9002,
-                'other_digit_acc': 0.9999,
-                'test_digit_acc': 0.9061,
-            }
-            BASELINE_METRICS_ROUND_2 = {
-                'target_digit_acc': 0.8829,
-                'other_digit_acc': 1.0000,
-                'test_digit_acc': 0.8931,
-            }
-
-        target_baseline = BASELINE_METRICS_ROUND_2 if num_forgotten_clients > 1 else BASELINE_METRICS_ROUND_1
+        current_round = min(max(num_forgotten_clients, 1), 3)
+        target_baseline = _make_client_round_baseline(current_round, target_client_id)
 
         # Train once up to max epochs for each lambda pair and evaluate at intermediate epochs
         max_epochs = max(epochs_grid) if epochs_grid else epochs

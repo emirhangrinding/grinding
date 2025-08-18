@@ -80,7 +80,8 @@ def run_sequential_forgetting_no_mtl(
                 f"--target-subset-id {client_id} "
                 f"--num-forgotten-clients {num_forgotten} "
                 f"--unlearned-model-name {unlearned_model_name} "
-                f"--previous-forgotten-clients {previous_forgotten_clients_arg}"
+                f"--previous-forgotten-clients {previous_forgotten_clients_arg} "
+                f"--current-client-id {client_id}"
             )
             try:
                 subprocess.run(tune_command, shell=True, check=True)
