@@ -84,6 +84,8 @@ def run_sequential_forgetting_no_mtl(
                 f"--current-client-id {client_id} "
                 f"--baseline-variant no_mtl"
             )
+            if args.fisher_on:
+                tune_command += f" --fisher-on {args.fisher_on}"
             try:
                 subprocess.run(tune_command, shell=True, check=True)
                 print(f"--- Successfully completed SSD tuning for client {client_id} ---")
@@ -160,6 +162,7 @@ if __name__ == "__main__":
     parser.add_argument("--clients", type=int, nargs="+", default=[0, 1, 2], help="Client IDs to forget in order (rounds)")
     parser.add_argument("--baseline-model-path", type=str, default=os.environ.get("BASELINE_MODEL_PATH", "/kaggle/input/no-mtl/pytorch/default/1/baseline_all_clients_model.h5"), help="Path to the baseline no-MTL model")
     parser.add_argument("--initial-unlearned-model-path", type=str, default=os.environ.get("INITIAL_UNLEARNED_MODEL_PATH", None), help="Optional: precomputed unlearned model for the first round")
+    parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="digit", help="Task to compute Fisher Information on during SSD (no-MTL: digit recommended)")
     args = parser.parse_args()
 
     run_sequential_forgetting_no_mtl(

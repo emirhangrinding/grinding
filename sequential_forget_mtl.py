@@ -38,6 +38,7 @@ def run_sequential_forgetting(
     baseline_variant: str = None,
     kill_output_neuron: bool = True,
     digit_metrics_only: bool = False,
+    calculate_fisher_on: str = "subset",
 ):
     """
     Performs sequential unlearning on a list of clients.
@@ -103,10 +104,12 @@ def run_sequential_forgetting(
                 f"--previous-forgotten-clients {previous_forgotten_clients_arg} "
                 f"--current-client-id {client_id} "
                 f"--baseline-variant {baseline_variant} "
-                f"--kill-output-neuron"
+                f"--fisher-on {calculate_fisher_on}"
             )
             if digit_metrics_only:
                 tune_command += " --digit-metrics-only"
+            if kill_output_neuron:
+                tune_command += " --kill-output-neuron"
             try:
                 subprocess.run(tune_command, shell=True, check=True)
                 print(f"--- Successfully completed SSD tuning for client {client_id} ---")
@@ -192,6 +195,8 @@ if __name__ == "__main__":
     parser.add_argument("--baseline-variant", type=str, choices=["mtl", "mtl_ce"], default=None, help="Baseline variant to use (mtl or mtl_ce)")
     parser.add_argument("--lambda-digit", dest="lambda_digit", type=float, default=None, help="Weight for adversarial digit loss (default 0.3)")
     parser.add_argument("--digit-metrics-only", action="store_true", help="Use only digit metrics during SSD tuning objective")
+    parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on during SSD")
+    parser.add_argument("--kill-output-neuron", action="store_true", help="Suppress the target subset's output neuron during evaluation after SSD")
     args = parser.parse_args()
 
     resolved_lambda_digit = args.lambda_digit if args.lambda_digit is not None else float(os.environ.get("LAMBDA_DIGIT", "0.3"))
@@ -203,6 +208,7 @@ if __name__ == "__main__":
         lambda_digit=resolved_lambda_digit,
         lambda_subset=0.0,
         baseline_variant=args.baseline_variant,
-        kill_output_neuron=True,
+        kill_output_neuron=args.kill_output_neuron or True,
         digit_metrics_only=args.digit_metrics_only,
+        calculate_fisher_on=args.fisher_on,
     )
