@@ -125,22 +125,31 @@ def run_sequential_forgetting(
             forgotten_clients.append(client_id)
         
         # Create data loaders that EXCLUDE all previously forgotten clients
-        all_indices = []
-        for c_id, indices in clients_data.items():
+        # IMPORTANT: map from original dataset indices -> MultiTaskDataset index space
+        mtl_dataset = MultiTaskDataset(full_dataset, clients_data)
+        dsidx_to_mtlidx = {ds_idx: pos for pos, ds_idx in enumerate(mtl_dataset.valid_indices)}
+
+        # Build per-client index lists in the MultiTaskDataset index space
+        client_to_mtl_indices = {}
+        for c_id, ds_indices in clients_data.items():
+            mtl_indices = [dsidx_to_mtlidx[ds_idx] for ds_idx in ds_indices if ds_idx in dsidx_to_mtlidx]
+            client_to_mtl_indices[c_id] = mtl_indices
+
+        # Indices for retain set (exclude all forgotten clients)
+        retain_mtl_indices = []
+        for c_id in clients_data.keys():
             numeric_id = int(c_id.replace("client", "")) - 1
             if numeric_id not in forgotten_clients:
-                 all_indices.extend(indices)
-        
-        mtl_dataset = MultiTaskDataset(full_dataset, clients_data)
-        
-        retain_dataset = Subset(mtl_dataset, all_indices)
+                retain_mtl_indices.extend(client_to_mtl_indices[c_id])
+
+        retain_dataset = Subset(mtl_dataset, retain_mtl_indices)
         retain_loader = DataLoader(retain_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
         # The 'forget_loader' should contain data for all clients forgotten so far
         forgotten_client_loaders = {}
         for cid in forgotten_clients:
-            forget_indices = clients_data[f"client{cid + 1}"]
-            forget_dataset = Subset(mtl_dataset, forget_indices)
+            forget_mtl_indices = client_to_mtl_indices[f"client{cid + 1}"]
+            forget_dataset = Subset(mtl_dataset, forget_mtl_indices)
             forgotten_client_loaders[cid] = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         # Load the unlearned model

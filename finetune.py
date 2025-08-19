@@ -27,14 +27,14 @@ def finetune_model(
     target_client_id,
     epochs=1,
     lr=1e-4,
-    lambda_digit=0.3,  # Weight for the adversarial digit loss
-    lambda_subset=0.05, # Deprecated: adversarial subset loss removed; kept for API compatibility
+    lambda_digit=0.3,   # Weight for the adversarial digit loss (applied on forget set)
+    lambda_subset=1.0,  # Weight for subset classification loss on retain set (loss_subset_r)
     seed=42,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     # Grid search controls (used only for MTL)
     search_lambdas: bool = True,
     lambda_digit_grid=None,
-    lambda_subset_grid=None,
+    lambda_subset_grid=None,  # Grid over retain subset-loss weights (e.g., [0.2, 1.0, 2.0])
     epochs_grid=None,
     save_best_model_path: str = None,
     baseline_variant: str = None,
@@ -63,8 +63,8 @@ def finetune_model(
     if lambda_digit_grid is None:
         lambda_digit_grid = [0.0, 0.05, 0.1, 0.3, 0.5]
     if lambda_subset_grid is None:
-        # Subset adversarial term is disabled; keep grid at 0.0 for compatibility
-        lambda_subset_grid = [0.0]
+        # Grid for the retain subset-loss weight
+        lambda_subset_grid = [0.2, 1.0, 2.0]
     if epochs_grid is None:
         # Include 0 to consider the non-finetuned model as a candidate
         epochs_grid = [0, 1, 2, 3]
@@ -162,6 +162,24 @@ def finetune_model(
             })
         return {k: v for k, v in baseline.items() if v is not None}
 
+    def _compute_total_digit_deviation_across_forgotten(model) -> float:
+        """Sum absolute deviations from baseline target-digit accuracy across ALL forgotten clients."""
+        if not forgotten_client_loaders:
+            return 0.0
+        current_round = min(max(len(forgotten_client_loaders), 1), 3)
+        total_dev = 0.0
+        for client_id, loader in forgotten_client_loaders.items():
+            if is_mtl:
+                tdig, _ = calculate_digit_classification_accuracy(
+                    model, loader, device, target_subset_id=client_id
+                )
+            else:
+                tdig = calculate_overall_digit_classification_accuracy(model, loader, device)
+            baseline = _make_client_round_baseline(current_round, client_id)
+            baseline_tdig = baseline.get('target_digit_acc', 0.0)
+            total_dev += abs(tdig - baseline_tdig)
+        return total_dev
+
     def score_from_metrics(metrics_dict: dict):
         test_acc = metrics_dict.get("Test set accuracy", 0.0)
         retain_acc = metrics_dict.get("Digit accuracy on other subsets", 0.0)
@@ -203,23 +221,8 @@ def finetune_model(
                 forgotten_client_loaders=forgotten_client_loaders,
                 current_forget_client_id=target_client_id,
             )
-            current_key0 = f"Digit acc on client {target_client_id} (newly forgotten)"
-            target_digit_acc0 = metrics_epoch0.get(current_key0, 0.0)
-            other_digit_acc0 = metrics_epoch0.get("Digit accuracy on other subsets", 0.0)
-            test_digit_acc0 = metrics_epoch0.get("Test set accuracy", 0.0)
-            current_metrics0 = {
-                'target_digit_acc': target_digit_acc0,
-                'other_digit_acc': other_digit_acc0,
-                'test_digit_acc': test_digit_acc0,
-            }
-            if is_mtl:
-                other_subset_acc0 = metrics_epoch0.get("Subset ID accuracy on other subsets", 0.0)
-                current_metrics0['other_subset_acc'] = other_subset_acc0
-            delta_score0 = calculate_baseline_delta_score(
-                current_metrics0,
-                baseline_for_scoring,
-                num_forgotten_clients=num_forgotten_clients_for_scoring,
-            )
+            # Compute total deviation across all forgotten clients (digit accuracies only)
+            delta_score0 = _compute_total_digit_deviation_across_forgotten(model)
             best_info = {
                 'delta': delta_score0,
                 'epoch': 0,
@@ -248,7 +251,8 @@ def finetune_model(
                     digit_logits_r, subset_logits_r, _ = model(inputs_r)
                     loss_digit_r = criterion(digit_logits_r, labels_r)
                     loss_subset_r = criterion(subset_logits_r, subset_labels_r)
-                    retain_loss = loss_digit_r + loss_subset_r
+                    # Weight the subset loss on the retain set
+                    retain_loss = loss_digit_r + (current_lambda_subset * loss_subset_r)
 
                     # --- Forget Set Loss (Adversarial: Encourage Forgetting) ---
                     inputs_f, labels_f, subset_labels_f = forget_batch
@@ -327,26 +331,8 @@ def finetune_model(
                     forgotten_client_loaders=forgotten_client_loaders,
                     current_forget_client_id=target_client_id,
                 )
-
-                # Map metrics to baseline keys
-                current_key = f"Digit acc on client {target_client_id} (newly forgotten)"
-                target_digit_acc = metrics_epoch.get(current_key, 0.0)
-                other_digit_acc = metrics_epoch.get("Digit accuracy on other subsets", 0.0)
-                test_digit_acc = metrics_epoch.get("Test set accuracy", 0.0)
-                current_metrics = {
-                    'target_digit_acc': target_digit_acc,
-                    'other_digit_acc': other_digit_acc,
-                    'test_digit_acc': test_digit_acc,
-                }
-                if is_mtl:
-                    other_subset_acc = metrics_epoch.get("Subset ID accuracy on other subsets", 0.0)
-                    current_metrics['other_subset_acc'] = other_subset_acc
-
-                delta_score = calculate_baseline_delta_score(
-                    current_metrics,
-                    baseline_for_scoring,
-                    num_forgotten_clients=num_forgotten_clients_for_scoring,
-                )
+                # Compute total deviation across all forgotten clients (digit accuracies only)
+                delta_score = _compute_total_digit_deviation_across_forgotten(model)
 
                 if (best_info is None) or (delta_score < best_info['delta']):
                     best_info = {
@@ -416,7 +402,7 @@ def finetune_model(
             model.load_state_dict(best_state)
             print(
                 f"\n✓ Selected best setting: epochs={best_epochs}, lambda_digit={best_combo[0]}, "
-                f"lambda_subset={best_combo[1]} with baseline delta={best_score:.6f}"
+                f"lambda_subset={best_combo[1]} with total digit deviation={best_score:.6f}"
             )
         else:
             print("Warning: No best state captured; falling back to last state.")

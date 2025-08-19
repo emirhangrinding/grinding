@@ -142,6 +142,7 @@ def ssd_unlearn_subset(
     calculate_fisher_on: str = "subset",
     kill_output_neuron: bool = False,
     use_cached_unlearned_model: Optional[nn.Module] = None,
+    silent: bool = False,
 ) -> tuple:
     """Apply Selective Synaptic Dampening (SSD) to forget a target subset.
 
@@ -157,7 +158,8 @@ def ssd_unlearn_subset(
         tuple: (unlearned_model, metrics_dict) where metrics_dict contains the calculated accuracies
     """
 
-    print("\n--- Starting Selective Synaptic Dampening (SSD) Unlearning ---")
+    if not silent:
+        print("\n--- Starting Selective Synaptic Dampening (SSD) Unlearning ---")
     if use_cached_unlearned_model:
         unlearned_model = use_cached_unlearned_model
     else:
@@ -172,12 +174,15 @@ def ssd_unlearn_subset(
         selection_weighting=selection_weighting,
     )
 
-    print(f"Computing parameter importances on retain/general set for {calculate_fisher_on} task …")
+    if not silent:
+        print(f"Computing parameter importances on retain/general set for {calculate_fisher_on} task …")
     imp_retain = perturber.calc_importance(retain_loader, calculate_fisher_on)
-    print(f"Computing parameter importances on forget set for {calculate_fisher_on} task …")
+    if not silent:
+        print(f"Computing parameter importances on forget set for {calculate_fisher_on} task …")
     imp_forget = perturber.calc_importance(forget_loader, calculate_fisher_on)
 
-    print("Applying synaptic dampening …")
+    if not silent:
+        print("Applying synaptic dampening …")
     perturber.apply_dampening(imp_retain, imp_forget)
 
     # Optionally prevent the model from predicting the target subset by
@@ -188,7 +193,8 @@ def ssd_unlearn_subset(
             unlearned_model.killed_subset_id = int(target_subset_id)
 
     # Accuracy evaluation (post-dampening, pre-fine-tune)
-    print("\nCalculating accuracies after dampening…")
+    if not silent:
+        print("\nCalculating accuracies after dampening…")
 
     # Choose evaluation strategy based on whether this is MTL or no-MTL
     if target_subset_id is None:
@@ -228,22 +234,26 @@ def ssd_unlearn_subset(
         tgt_acc, oth_acc = calculate_digit_classification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
         sub_tgt_acc, sub_oth_acc = calculate_subset_identification_accuracy(unlearned_model, temp_loader, device, target_subset_id)
 
-    print(f"Digit accuracy on target subset after SSD: {tgt_acc:.4f}")
-    print(f"Digit accuracy on other subsets after SSD: {oth_acc:.4f}")
-    print(f"Subset ID accuracy on target subset after SSD: {sub_tgt_acc:.4f}")
-    print(f"Subset ID accuracy on other subsets after SSD: {sub_oth_acc:.4f}")
+    if not silent:
+        print(f"Digit accuracy on target subset after SSD: {tgt_acc:.4f}")
+        print(f"Digit accuracy on other subsets after SSD: {oth_acc:.4f}")
+        print(f"Subset ID accuracy on target subset after SSD: {sub_tgt_acc:.4f}")
+        print(f"Subset ID accuracy on other subsets after SSD: {sub_oth_acc:.4f}")
 
     # Test set evaluation
     test_digit_acc = None
     if test_loader is not None:
         test_digit_acc = calculate_overall_digit_classification_accuracy(unlearned_model, test_loader, device)
-        print(f"[TEST] Digit accuracy after SSD: {test_digit_acc:.4f}")
+        if not silent:
+            print(f"[TEST] Digit accuracy after SSD: {test_digit_acc:.4f}")
 
     # Optional evaluation (MIA) for feedback (train-only variant)
     mia_score = get_membership_attack_prob_train_only(retain_loader, forget_loader, unlearned_model)
-    print(f"Train-only MIA Score on forget set after SSD: {mia_score:.4f}")
+    if not silent:
+        print(f"Train-only MIA Score on forget set after SSD: {mia_score:.4f}")
 
-    print("--- SSD Unlearning Finished ---")
+    if not silent:
+        print("--- SSD Unlearning Finished ---")
     
     # Return both model and metrics
     metrics = {

@@ -48,15 +48,22 @@ def main():
     target_client_id = 0
     target_key = f"client{target_client_id + 1}"
     target_indices = clients_data[target_key]
-    
-    other_indices = []
+
+    # Build MultiTaskDataset index mapping
+    multitask_dataset = MultiTaskDataset(full_dataset, clients_data)
+    dsidx_to_mtlidx = {ds_idx: pos for pos, ds_idx in enumerate(multitask_dataset.valid_indices)}
+
+    # Map original dataset indices to MultiTaskDataset index space
+    target_mtl_indices = [dsidx_to_mtlidx[i] for i in target_indices if i in dsidx_to_mtlidx]
+    other_mtl_indices = []
     for i in range(num_clients):
         if i != target_client_id:
-            other_indices.extend(clients_data[f"client{i + 1}"])
+            other_mtl_indices.extend(
+                [dsidx_to_mtlidx[j] for j in clients_data[f"client{i + 1}"] if j in dsidx_to_mtlidx]
+            )
 
-    multitask_dataset = MultiTaskDataset(full_dataset, clients_data)
-    retain_dataset = Subset(multitask_dataset, other_indices)
-    forget_dataset = Subset(multitask_dataset, target_indices)
+    retain_dataset = Subset(multitask_dataset, other_mtl_indices)
+    forget_dataset = Subset(multitask_dataset, target_mtl_indices)
     
     retain_loader = DataLoader(retain_dataset, batch_size=128, shuffle=True)
     forget_loader = DataLoader(forget_dataset, batch_size=128, shuffle=True)

@@ -45,11 +45,24 @@ clients_data, _, full_dataset = generate_subdatasets(
     data_root=DATA_ROOT
 )
 
-# Create datasets and loaders
+"""Build MultiTaskDataset and map original dataset indices to its index space."""
 mtl_dataset = MultiTaskDataset(full_dataset, clients_data)
-train_loader = DataLoader(mtl_dataset, batch_size=BATCH_SIZE, shuffle=True)
+dsidx_to_mtlidx = {ds_idx: pos for pos, ds_idx in enumerate(mtl_dataset.valid_indices)}
 
-# Create loaders for retain and the CURRENTLY forgotten client
+# Exclude previously forgotten clients from the training pool for SSD tuning
+prev_forgotten_set = set(args.previous_forgotten_clients or [])
+train_mtl_indices = []
+for c_id_str, ds_indices in clients_data.items():
+    numeric_id = int(c_id_str.replace("client", "")) - 1
+    if numeric_id not in prev_forgotten_set:
+        train_mtl_indices.extend(
+            [dsidx_to_mtlidx[i] for i in ds_indices if i in dsidx_to_mtlidx]
+        )
+
+train_dataset = Subset(mtl_dataset, train_mtl_indices)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+# Create loaders for retain and the CURRENTLY forgotten client (split within the filtered pool)
 retain_loader, forget_loader = create_subset_data_loaders(train_loader, args.target_subset_id)
 
 # Create loaders for PREVIOUSLY forgotten clients
@@ -60,7 +73,8 @@ if args.previous_forgotten_clients:
         # We need to create a loader for each previously forgotten client.
         # This requires isolating their data from the full dataset.
         client_indices = clients_data[f"client{client_id + 1}"]
-        forget_dataset = Subset(mtl_dataset, client_indices)
+        client_mtl_indices = [dsidx_to_mtlidx[i] for i in client_indices if i in dsidx_to_mtlidx]
+        forget_dataset = Subset(mtl_dataset, client_mtl_indices)
         all_forgotten_loaders[client_id] = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # Test loader

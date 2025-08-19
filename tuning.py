@@ -154,10 +154,8 @@ def optimise_ssd_hyperparams(
         allowed = {'target_digit_acc', 'other_digit_acc', 'test_digit_acc'}
         return {k: v for k, v in metrics_dict.items() if k in allowed}
 
-    print(f"Optimising SSD hyperparameters ({'no-MTL' if is_no_mtl else 'MTL'} case, for client {target_subset_id} ({num_forgotten_clients} forgotten total))")
+    # Establish the current stage (round) for baseline selection
     current_round = min(max(num_forgotten_clients, 1), 3)
-    print_baseline = _make_client_round_baseline(current_round, current_client_id)
-    print(f"Target baseline metrics (Round {current_round}, client {current_client_id}): {print_baseline}")
 
     sampler = optuna.samplers.TPESampler(seed=seed, n_startup_trials=10, n_ei_candidates=24)
     study = optuna.create_study(direction="minimize", sampler=sampler)
@@ -177,84 +175,69 @@ def optimise_ssd_hyperparams(
             test_loader=test_loader,
             calculate_fisher_on=calculate_fisher_on,
             kill_output_neuron=kill_output_neuron,
+            silent=True,
         )
 
         model_state = io.BytesIO()
         torch.save(unlearned_model.state_dict(), model_state)
         trial.set_user_attr("model_state", model_state.getvalue())
 
-        total_delta_score = 0
+        # --- Compute total deviation from baseline digit accuracy across ALL forgotten clients ---
+        total_delta_score = 0.0
 
-        # --- Log SSD metrics for the newly forgotten client and other subsets ---
-        print("\n--- SSD metrics (current round) ---")
-        print(f"Digit accuracy on client {current_client_id} after SSD (newly forgotten): {initial_ssd_metrics['target_digit_acc']:.4f}")
-        print(f"Digit accuracy on other subsets after SSD: {initial_ssd_metrics['other_digit_acc']:.4f}")
-        if not is_no_mtl:
-            print(f"Subset ID accuracy on other subsets after SSD: {initial_ssd_metrics['other_subset_acc']:.4f}")
-        if initial_ssd_metrics.get('test_digit_acc') is not None:
-            print(f"[TEST] Digit accuracy after SSD: {initial_ssd_metrics['test_digit_acc']:.4f}")
-        
-        # --- Stage 1: Evaluate the primary client being forgotten NOW ---
-        primary_baseline = _filter_digit_only(_make_client_round_baseline(current_round, current_client_id))
-        primary_metrics_tuning = {key: initial_ssd_metrics[key] for key in primary_baseline}
-        primary_delta_score = calculate_baseline_delta_score(
-            primary_metrics_tuning, primary_baseline, num_forgotten_clients=num_forgotten_clients
-        )
-        total_delta_score += primary_delta_score
-
-        # --- Stage 2: Evaluate PREVIOUSLY forgotten clients using the unlearned model (no second SSD run) ---
+        # Print: previously forgotten clients first (if any), then newly forgotten, then others/test
         if num_forgotten_clients > 1 and all_forgotten_loaders:
             # Ensure proper masking for MTL during evaluation
             if not is_no_mtl and hasattr(unlearned_model, "kill_output_neuron"):
                 unlearned_model.kill_output_neuron = True
                 if hasattr(unlearned_model, "killed_subset_ids"):
-                    # mask both current and previously forgotten clients during evaluation
                     mask_ids = set(all_forgotten_loaders.keys())
                     if target_subset_id is not None:
                         mask_ids.add(int(target_subset_id))
                     unlearned_model.killed_subset_ids = mask_ids
                 elif hasattr(unlearned_model, "killed_subset_id") and (target_subset_id is not None):
-                    # fallback: mask only current client if multi-mask not available
                     unlearned_model.killed_subset_id = int(target_subset_id)
 
             for client_id, loader in all_forgotten_loaders.items():
-                # Evaluate metrics for each previously forgotten client
-                client_round_baseline = _filter_digit_only(_make_client_round_baseline(current_round, client_id))
-
-                secondary_metrics_tuning = {}
-                # Target digit accuracy for this client's data
+                # Evaluate metrics per previously forgotten client
                 if is_no_mtl:
                     tdig = calculate_overall_digit_classification_accuracy(unlearned_model, loader, device)
-                    secondary_metrics_tuning['target_digit_acc'] = tdig
+                    tsub = 0.0
                 else:
                     tdig, _ = calculate_digit_classification_accuracy(
                         unlearned_model, loader, device, target_subset_id=client_id
                     )
-                    secondary_metrics_tuning['target_digit_acc'] = tdig
-                    # Also evaluate subset-ID target accuracy if present in baseline
-                    if 'target_subset_acc' in client_round_baseline:
-                        tsub, _ = calculate_subset_identification_accuracy(
-                            unlearned_model, loader, device, target_subset_id=client_id
-                        )
-                        secondary_metrics_tuning['target_subset_acc'] = tsub
-                # Print per-previously-forgotten client metrics
-                print(f"Digit accuracy on client {client_id} after SSD (previously forgotten): {secondary_metrics_tuning['target_digit_acc']:.4f}")
-                if (not is_no_mtl) and ('target_subset_acc' in secondary_metrics_tuning):
-                    print(f"Subset ID accuracy on client {client_id} after SSD (previously forgotten): {secondary_metrics_tuning['target_subset_acc']:.4f}")
-                # Test accuracy if part of baseline
-                if 'test_digit_acc' in client_round_baseline and test_loader is not None:
-                    secondary_metrics_tuning['test_digit_acc'] = calculate_overall_digit_classification_accuracy(
-                        unlearned_model, test_loader, device
+                    tsub, _ = calculate_subset_identification_accuracy(
+                        unlearned_model, loader, device, target_subset_id=client_id
                     )
 
-                # Use weights corresponding to a single forgotten client for consistency of scaling
-                secondary_metrics_tuning = {
-                    key: secondary_metrics_tuning[key] for key in client_round_baseline if key in secondary_metrics_tuning
-                }
-                secondary_delta_score = calculate_baseline_delta_score(
-                    secondary_metrics_tuning, client_round_baseline, num_forgotten_clients=1
-                )
-                total_delta_score += secondary_delta_score
+                # Logging in requested format
+                print(f"digit accuracy on client {client_id} after SSD (previously forgotten): {tdig:.4f}")
+                if not is_no_mtl:
+                    print(f"subset id accuracy on client {client_id} after SSD (previously forgotten): {tsub:.4f}")
+
+                # Sum absolute deviation from baseline target-digit accuracy (per-client)
+                client_baseline = _make_client_round_baseline(current_round, client_id)
+                baseline_tdig = client_baseline.get('target_digit_acc', 0.0)
+                total_delta_score += abs(tdig - baseline_tdig)
+
+                # Record per-client metrics on the trial for later inspection
+                trial.set_user_attr(f"client_{client_id}_digit_acc", tdig)
+                if not is_no_mtl:
+                    trial.set_user_attr(f"client_{client_id}_subset_acc", tsub)
+
+        # Newly forgotten client (current)
+        print(f"digit accuracy on client {current_client_id} after SSD (newly forgotten): {initial_ssd_metrics['target_digit_acc']:.4f}")
+        print(f"digit accuracy on other subsets after SSD: {initial_ssd_metrics['other_digit_acc']:.4f}")
+        if not is_no_mtl:
+            print(f"subset id accuracy on client {current_client_id} after SSD (newly forgotten): {initial_ssd_metrics.get('target_subset_acc', 0.0):.4f}")
+            print(f"subset id accuracy on other subsets after SSD: {initial_ssd_metrics.get('other_subset_acc', 0.0):.4f}")
+        if initial_ssd_metrics.get('test_digit_acc') is not None:
+            print(f"[TEST] Digit accuracy after SSD: {initial_ssd_metrics['test_digit_acc']:.4f}")
+
+        # Add deviation for the newly forgotten client vs baseline
+        current_baseline = _make_client_round_baseline(current_round, current_client_id)
+        total_delta_score += abs(initial_ssd_metrics['target_digit_acc'] - current_baseline.get('target_digit_acc', 0.0))
 
         # Log main trial metrics
         trial.set_user_attr("target_digit_acc", initial_ssd_metrics['target_digit_acc'])
@@ -274,12 +257,77 @@ def optimise_ssd_hyperparams(
     print(f"Best combined delta score: {study.best_value:.6f}")
 
     best_trial = study.best_trial
-    baseline_to_print = _make_client_round_baseline(current_round, current_client_id)
-    print("\nBest trial metrics vs baseline for current forgotten client:")
-    for key in baseline_to_print:
-        current_val = best_trial.user_attrs[key]
-        baseline_val = baseline_to_print[key]
-        print(f" * {key}: {current_val:.4f} (baseline: {baseline_val:.4f}, diff: {abs(current_val - baseline_val):.4f})")
+    # Print best-trial metrics in the requested format (re-evaluate using the saved best model)
+    # Reconstruct the best model for consistent reporting
+    best_state = torch.load(io.BytesIO(best_trial.user_attrs["model_state"]), map_location=device)
+    best_model = copy.deepcopy(pretrained_model).to(device)
+    best_model.load_state_dict(best_state)
+    best_model.eval()
+
+    # Mask subset neurons if applicable
+    if not is_no_mtl and hasattr(best_model, "kill_output_neuron"):
+        best_model.kill_output_neuron = True
+        if hasattr(best_model, "killed_subset_ids") and all_forgotten_loaders:
+            mask_ids = set(all_forgotten_loaders.keys())
+            if target_subset_id is not None:
+                mask_ids.add(int(target_subset_id))
+            best_model.killed_subset_ids = mask_ids
+        elif hasattr(best_model, "killed_subset_id") and (target_subset_id is not None):
+            best_model.killed_subset_id = int(target_subset_id)
+
+    # Print previously forgotten clients
+    if num_forgotten_clients > 1 and all_forgotten_loaders:
+        for client_id, loader in all_forgotten_loaders.items():
+            if is_no_mtl:
+                tdig = calculate_overall_digit_classification_accuracy(best_model, loader, device)
+                tsub = 0.0
+            else:
+                tdig, _ = calculate_digit_classification_accuracy(best_model, loader, device, target_subset_id=client_id)
+                tsub, _ = calculate_subset_identification_accuracy(best_model, loader, device, target_subset_id=client_id)
+            print(f"digit accuracy on client {client_id} after SSD (previously forgotten): {tdig:.4f}")
+            if not is_no_mtl:
+                print(f"subset id accuracy on client {client_id} after SSD (previously forgotten): {tsub:.4f}")
+
+    # Newly forgotten client metrics and 'other subsets' on best model
+    if is_no_mtl:
+        # No-MTL: treat as overall metrics on loaders
+        current_tdig = calculate_overall_digit_classification_accuracy(best_model, forget_loader, device)
+        other_dig = calculate_overall_digit_classification_accuracy(best_model, retain_loader, device)
+        print(f"digit accuracy on client {current_client_id} after SSD (newly forgotten): {current_tdig:.4f}")
+        print(f"digit accuracy on other subsets after SSD: {other_dig:.4f}")
+    else:
+        # Build a combined loader to compute other-subsets metrics correctly
+        combined_list = []
+        for loader in (retain_loader, forget_loader):
+            for item in loader.dataset:
+                if len(item) == 3:
+                    x, y_dig, y_sub = item
+                else:
+                    x, y_dig = item
+                    y_sub = 0
+                combined_list.append((x, y_dig, y_sub))
+
+        class _TempDataset(torch.utils.data.Dataset):
+            def __init__(self, data_list):
+                self.data = data_list
+            def __len__(self):
+                return len(self.data)
+            def __getitem__(self, idx):
+                return self.data[idx]
+
+        temp_loader = DataLoader(_TempDataset(combined_list), batch_size=retain_loader.batch_size, shuffle=False)
+
+        cur_tdig, oth_dig = calculate_digit_classification_accuracy(best_model, temp_loader, device, current_client_id)
+        cur_tsub, oth_sub = calculate_subset_identification_accuracy(best_model, temp_loader, device, current_client_id)
+        print(f"digit accuracy on client {current_client_id} after SSD (newly forgotten): {cur_tdig:.4f}")
+        print(f"digit accuracy on other subsets after SSD: {oth_dig:.4f}")
+        print(f"subset id accuracy on client {current_client_id} after SSD (newly forgotten): {cur_tsub:.4f}")
+        print(f"subset id accuracy on other subsets after SSD: {oth_sub:.4f}")
+
+    # Test accuracy on best model
+    if test_loader is not None:
+        best_test_acc = calculate_overall_digit_classification_accuracy(best_model, test_loader, device)
+        print(f"[TEST] Digit accuracy after SSD: {best_test_acc:.4f}")
 
     output_filename = f"{unlearned_model_name}.h5"
     best_model_state_bytes = best_trial.user_attrs["model_state"]
@@ -288,32 +336,6 @@ def optimise_ssd_hyperparams(
     print(f"\n✓ Best unlearned model saved to: {output_filename}")
 
     # --- Evaluate and print metrics for previously forgotten clients using the best model ---
-    if num_forgotten_clients > 1 and all_forgotten_loaders:
-        # Reconstruct the best model
-        best_state = torch.load(io.BytesIO(best_model_state_bytes), map_location=device)
-        best_model = copy.deepcopy(pretrained_model).to(device)
-        best_model.load_state_dict(best_state)
-        best_model.eval()
-        # Ensure masking for MTL
-        if not is_no_mtl and hasattr(best_model, "kill_output_neuron"):
-            best_model.kill_output_neuron = True
-            if hasattr(best_model, "killed_subset_ids"):
-                mask_ids = set(all_forgotten_loaders.keys())
-                if target_subset_id is not None:
-                    mask_ids.add(int(target_subset_id))
-                best_model.killed_subset_ids = mask_ids
-            elif hasattr(best_model, "killed_subset_id") and (target_subset_id is not None):
-                best_model.killed_subset_id = int(target_subset_id)
-
-        print("\n--- Best-trial SSD metrics for previously forgotten clients ---")
-        for client_id, loader in all_forgotten_loaders.items():
-            if is_no_mtl:
-                tdig = calculate_overall_digit_classification_accuracy(best_model, loader, device)
-                print(f"Digit accuracy on client {client_id} after SSD (previously forgotten): {tdig:.4f}")
-            else:
-                tdig, _ = calculate_digit_classification_accuracy(best_model, loader, device, target_subset_id=client_id)
-                print(f"Digit accuracy on client {client_id} after SSD (previously forgotten): {tdig:.4f}")
-                tsub, _ = calculate_subset_identification_accuracy(best_model, loader, device, target_subset_id=client_id)
-                print(f"Subset ID accuracy on client {client_id} after SSD (previously forgotten): {tsub:.4f}")
+    # (Legacy block replaced by unified best-model reporting above)
 
     return study
