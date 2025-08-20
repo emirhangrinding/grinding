@@ -51,6 +51,7 @@ def run_sequential_forgetting(
     current_model_path = baseline_model_path
     # Allows starting from a later round by seeding previously forgotten clients
     forgotten_clients = list(initial_forgotten_clients) if initial_forgotten_clients else []
+    base_forgotten_count = len(forgotten_clients)
     
     # Generate the full client dataset structure once
     clients_data, _, full_dataset = generate_subdatasets(
@@ -71,7 +72,8 @@ def run_sequential_forgetting(
         baseline_variant = "mtl_ce" if ("no_dis" in os.path.basename(baseline_model_path)) else "mtl"
 
     for i, client_id in enumerate(clients_to_forget):
-        num_forgotten = i + 1
+        # Account for clients forgotten prior to this resume
+        num_forgotten = base_forgotten_count + i + 1
         print(f"\n--- Stage {num_forgotten}: Forgetting client {client_id} ---")
 
         # --- 1. SSD Unlearning ---
