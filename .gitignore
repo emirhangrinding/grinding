@@ -174,3 +174,4 @@ datasets/
 checkpoints/
 models/
 logs/ 
+client_class_heatmap.png
