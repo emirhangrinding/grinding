@@ -175,3 +175,8 @@ checkpoints/
 models/
 logs/ 
 client_class_heatmap.png
+foster.tex
+losses_and_taylor_expansion.tex
+.gitignore
+main.tex
+main.bib
