@@ -12,6 +12,7 @@ from finetune import finetune_model
 from evaluation import evaluate_and_print_metrics
 from torchvision.datasets import MNIST, CIFAR10
 from data import transform_mnist, transform_test_cifar
+from baseline import train_baseline_all_clients as train_mtl_baseline_all_clients
 
 # --- Configuration ---
 IS_MTL = True
@@ -70,6 +71,51 @@ def run_sequential_forgetting(
     # Infer baseline variant if not provided
     if baseline_variant is None:
         baseline_variant = "mtl_ce" if ("no_dis" in os.path.basename(baseline_model_path)) else "mtl"
+    
+    # If baseline model is missing, train from scratch and save to a writable location
+    if not os.path.exists(baseline_model_path):
+        print(f"Baseline model not found at {baseline_model_path}. Training from scratch...")
+        save_path = baseline_model_path
+        save_dir = os.path.dirname(save_path)
+        # Determine a writable path; Kaggle's /kaggle/input is read-only
+        if save_dir:
+            if not os.path.isdir(save_dir):
+                try:
+                    os.makedirs(save_dir, exist_ok=True)
+                except Exception as e:
+                    print(f"Could not create directory {save_dir} ({e}). Saving to current directory.")
+                    save_path = os.path.basename(save_path) or "baseline_mtl_all_clients.h5"
+            elif not os.access(save_dir, os.W_OK):
+                print(f"Directory {save_dir} not writable. Saving to current directory.")
+                save_path = os.path.basename(save_path) or "baseline_mtl_all_clients.h5"
+        else:
+            save_path = os.path.basename(save_path) or "baseline_mtl_all_clients.h5"
+
+        lambda_dis_value = 0.0 if baseline_variant == "mtl_ce" else 0.1
+        try:
+            train_mtl_baseline_all_clients(
+                dataset_name=DATASET_NAME,
+                setting="non-iid",
+                num_clients=NUM_CLIENTS,
+                batch_size=BATCH_SIZE,
+                num_epochs=200,
+                lambda_1=1.0,
+                lambda_2=1.0,
+                lambda_dis=lambda_dis_value,
+                lambda_pull=1.0,
+                lambda_push=1.0,
+                data_root=DATA_ROOT,
+                path=save_path,
+                seed=SEED,
+                head_size=HEAD_SIZE,
+            )
+            baseline_model_path = save_path
+            print(f"Baseline trained and saved to {baseline_model_path}")
+        except Exception as e:
+            print(f"Failed to train baseline model: {e}")
+            return
+
+    current_model_path = baseline_model_path
 
     for i, client_id in enumerate(clients_to_forget):
         # Account for clients forgotten prior to this resume

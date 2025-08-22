@@ -11,6 +11,7 @@ from finetune import finetune_model
 from evaluation import evaluate_and_print_metrics
 from torchvision.datasets import MNIST, CIFAR10
 from data import transform_mnist, transform_test_cifar
+from train_baseline_all_no_mtl import learn_baseline_all_clients as train_no_mtl_baseline_all_clients
 
 # --- Configuration ---
 IS_MTL = False
@@ -39,6 +40,44 @@ def run_sequential_forgetting_no_mtl(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_global_seed(SEED)
     
+    # If baseline model is missing, train from scratch and save to a writable location
+    if not os.path.exists(baseline_model_path):
+        print(f"Baseline model not found at {baseline_model_path}. Training from scratch (no-MTL)...")
+        save_path = baseline_model_path
+        save_dir = os.path.dirname(save_path)
+        # Determine a writable path; handle read-only dirs like /kaggle/input
+        if save_dir:
+            if not os.path.isdir(save_dir):
+                try:
+                    os.makedirs(save_dir, exist_ok=True)
+                except Exception as e:
+                    print(f"Could not create directory {save_dir} ({e}). Saving to current directory.")
+                    save_path = os.path.basename(save_path) or "baseline_all_clients_model.h5"
+            elif not os.access(save_dir, os.W_OK):
+                print(f"Directory {save_dir} not writable. Saving to current directory.")
+                save_path = os.path.basename(save_path) or "baseline_all_clients_model.h5"
+        else:
+            save_path = os.path.basename(save_path) or "baseline_all_clients_model.h5"
+
+        try:
+            # For no-MTL baseline trained on all clients
+            train_no_mtl_baseline_all_clients(
+                dataset_name=DATASET_NAME,
+                setting="non-iid",
+                num_clients=NUM_CLIENTS,
+                target_client_id=0,
+                batch_size=BATCH_SIZE,
+                num_epochs=200,
+                data_root=DATA_ROOT,
+                path=save_path,
+                seed=SEED,
+            )
+            baseline_model_path = save_path
+            print(f"Baseline (no-MTL) trained and saved to {baseline_model_path}")
+        except Exception as e:
+            print(f"Failed to train baseline (no-MTL) model: {e}")
+            return
+
     current_model_path = baseline_model_path
     forgotten_clients = []
     
