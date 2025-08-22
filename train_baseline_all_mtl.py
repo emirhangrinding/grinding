@@ -82,7 +82,7 @@ def train_baseline_all_clients(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train baseline MTL on all clients")
-    parser.add_argument("--dataset_name", default="CIFAR10", choices=["MNIST", "CIFAR10"])
+    parser.add_argument("--dataset_name", default="CIFAR10", choices=["MNIST", "CIFAR10", "CIFAR100"])
     parser.add_argument("--setting", default="non-iid", choices=["iid", "non-iid", "extreme-non-iid"])
     parser.add_argument("--num_clients", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=128)

@@ -2,7 +2,7 @@ import argparse
 import random
 import torch
 from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 
 from utils import set_global_seed, SEED_DEFAULT
 from data import (
@@ -94,11 +94,14 @@ def unlearn(
     # Load the official test split
     if dataset_name == 'MNIST':
         test_base = MNIST(root=data_root, train=False, download=True, transform=transform_mnist)
-    else:
+    elif dataset_name == 'CIFAR10':
         test_base = CIFAR10(root=data_root, train=False, download=True, transform=transform_test_cifar)
+    else:
+        test_base = CIFAR100(root=data_root, train=False, download=True, transform=transform_test_cifar)
 
     # Assign test samples to clients using the same class-based mapping as training
-    test_class_indices = {i: [] for i in range(10)}
+    num_digit_classes = 100 if dataset_name == 'CIFAR100' else 10
+    test_class_indices = {i: [] for i in range(num_digit_classes)}
     for idx, (_, label) in enumerate(test_base):
         test_class_indices[label].append(idx)
     test_clients_data = {k: [] for k in clients_data.keys()}
@@ -239,7 +242,7 @@ def _build_cli_parser():
 
     # Train sub-command
     train_parser = subparsers.add_parser("train", help="Train a new model and save the weights")
-    train_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10"], help="Dataset to use")
+    train_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10", "CIFAR100"], help="Dataset to use")
     train_parser.add_argument("--setting", default="non-iid", choices=["iid", "non-iid", "extreme-non-iid"], help="Data-partition setting")
     train_parser.add_argument("--num_clients", type=int, default=10, help="Number of clients/subsets")
     train_parser.add_argument("--batch_size", type=int, default=256, help="Mini-batch size")
@@ -264,7 +267,7 @@ def _build_cli_parser():
     unlearn_parser.add_argument("--epochs_unlearn", type=int, default=1, help="Number of epochs for unlearning fine-tuning")
     unlearn_parser.add_argument("--finetune_task", default="subset", choices=["subset", "digit", "both"], help="Fine-tuning task: subset, digit, or both")
     unlearn_parser.add_argument("--fine_tune_heads", action="store_true", help="Also fine-tune classification heads during unlearning")
-    unlearn_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10"], help="Dataset to use for unlearning evaluation")
+    unlearn_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10", "CIFAR100"], help="Dataset to use for unlearning evaluation")
     unlearn_parser.add_argument("--num_clients", type=int, default=10, help="Number of clients/subsets in original training")
     unlearn_parser.add_argument("--batch_size", type=int, default=64, help="Mini-batch size for unlearning")
     unlearn_parser.add_argument("--head_size", default="big", choices=["big", "medium", "small"], help="Size of the classification heads used in the model")
@@ -285,7 +288,7 @@ def _build_cli_parser():
 
     # Baseline sub-command
     baseline_parser = subparsers.add_parser("baseline", help="Train a baseline model excluding one client")
-    baseline_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10"], help="Dataset to use")
+    baseline_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10", "CIFAR100"], help="Dataset to use")
     baseline_parser.add_argument("--setting", default="non-iid", choices=["iid", "non-iid", "extreme-non-iid"], help="Data-partition setting")
     baseline_parser.add_argument("--num_clients", type=int, default=10, help="Number of clients/subsets")
     baseline_parser.add_argument("--excluded_client_id", type=int, required=True, help="Client ID to exclude from training (0-indexed)")
@@ -308,7 +311,7 @@ def _build_cli_parser():
     tune_parser.add_argument("--model_path", required=True, help="Path to the pretrained model weights (e.g., model.h5)")
     tune_parser.add_argument("--target_subset_id", type=int, required=True, help="Subset (client) id to unlearn during tuning")
     tune_parser.add_argument("--n_trials", type=int, default=25, help="Number of Optuna trials")
-    tune_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10"], help="Dataset name (should match the model)")
+    tune_parser.add_argument("--dataset", default="CIFAR10", choices=["MNIST", "CIFAR10", "CIFAR100"], help="Dataset name (should match the model)")
     tune_parser.add_argument("--num_clients", type=int, default=10, help="Number of clients/subsets (should match the model)")
     tune_parser.add_argument("--batch_size", type=int, default=256, help="Mini-batch size for data loaders during tuning")
     tune_parser.add_argument("--data_root", default="./data", help="Root directory for datasets")

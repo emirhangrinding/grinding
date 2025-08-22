@@ -1,7 +1,7 @@
 import random
 import torch
 from torch.utils.data import DataLoader, Subset, ConcatDataset
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, transform_mnist, transform_test_cifar
@@ -75,8 +75,10 @@ def learn_baseline_all_clients(
     
     if dataset_name == "MNIST":
         test_base = MNIST(root=data_root, train=False, download=True, transform=transform_mnist)
-    else:
+    elif dataset_name == "CIFAR10":
         test_base = CIFAR10(root=data_root, train=False, download=True, transform=transform_test_cifar)
+    else:
+        test_base = CIFAR100(root=data_root, train=False, download=True, transform=transform_test_cifar)
     test_loader = DataLoader(test_base, batch_size=batch_size)
 
     # Model & training

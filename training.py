@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 
 from utils import set_global_seed, intra_y1_y2_disentanglement_loss, SEED_DEFAULT
 from data import (
@@ -369,8 +369,10 @@ def learn(dataset_name='MNIST', setting='non-iid', num_clients=10,
     # Prepare official test split (digit classification only)
     if dataset_name == 'MNIST':
         test_base = MNIST(root=data_root, train=False, download=True, transform=transform_mnist)
-    else:
+    elif dataset_name == 'CIFAR10':
         test_base = CIFAR10(root=data_root, train=False, download=True, transform=transform_test_cifar)
+    else:
+        test_base = CIFAR100(root=data_root, train=False, download=True, transform=transform_test_cifar)
     test_loader = DataLoader(test_base, batch_size=batch_size)
 
     # Create model using the specified model class

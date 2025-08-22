@@ -2,7 +2,7 @@ import random
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 from collections import defaultdict, Counter
 
 from utils import dirichlet_partition
@@ -40,12 +40,16 @@ def generate_subdatasets(
     # Dataset-specific transforms
     if dataset_name == 'MNIST':
         dataset = MNIST(root=data_root, train=True, download=True, transform=transform_mnist)
-    else:  # CIFAR10
+        num_classes = 10
+    elif dataset_name == 'CIFAR10':
         dataset = CIFAR10(root=data_root, train=True, download=True, transform=transform_train_cifar)
-    assert dataset_name in ['MNIST', 'CIFAR10'], "Dataset must be 'MNIST' or 'CIFAR10'"
+        num_classes = 10
+    elif dataset_name == 'CIFAR100':
+        dataset = CIFAR100(root=data_root, train=True, download=True, transform=transform_train_cifar)
+        num_classes = 100
+    else:
+        raise AssertionError("Dataset must be 'MNIST', 'CIFAR10', or 'CIFAR100'")
     assert setting in ['iid', 'non-iid', 'extreme-non-iid'], "Invalid setting"
-
-    num_classes = 10
     total_samples = len(dataset)
     samples_per_client = total_samples // num_clients
 

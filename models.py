@@ -104,6 +104,12 @@ class StandardResNet(nn.Module):
                 3, 64, kernel_size=3, stride=1, padding=1, bias=False
             )
             num_classes = 10
+        elif dataset_name == "CIFAR100":
+            # CIFAR-100 shares the same image shape as CIFAR-10
+            self.resnet.conv1 = nn.Conv2d(
+                3, 64, kernel_size=3, stride=1, padding=1, bias=False
+            )
+            num_classes = 100
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
@@ -167,8 +173,9 @@ class MTL_Two_Heads_ResNet(nn.Module):
             layers.append(nn.Linear(input_dim, output_dim))
             return nn.Sequential(*layers)
 
-        # Digit classification head (10 classes)
-        self.digit_head = _build_head(10)
+        # Digit classification head (10 for MNIST/CIFAR10, 100 for CIFAR100)
+        digit_classes = 100 if dataset_name == 'CIFAR100' else 10
+        self.digit_head = _build_head(digit_classes)
 
         # Subset identification head (num_clients classes)
         self.subset_head = _build_head(num_clients)

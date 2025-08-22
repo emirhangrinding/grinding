@@ -3,7 +3,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset, ConcatDataset
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 import random
 import copy
 
@@ -76,10 +76,13 @@ def main():
     # --- Test Loader (adapted from run_ssd_tuning.py) ---
     if DATASET_NAME == "MNIST":
         test_base = MNIST(root=DATA_ROOT, train=False, download=True, transform=transform_mnist)
-    else:
+    elif DATASET_NAME == "CIFAR10":
         test_base = CIFAR10(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
+    else:
+        test_base = CIFAR100(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
 
-    test_class_indices = {i: [] for i in range(10)}
+    num_digit_classes = 100 if DATASET_NAME == "CIFAR100" else 10
+    test_class_indices = {i: [] for i in range(num_digit_classes)}
     for idx, (_, label) in enumerate(test_base):
         test_class_indices[label].append(idx)
 

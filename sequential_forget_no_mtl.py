@@ -9,7 +9,7 @@ from data import generate_subdatasets
 from models import StandardResNet
 from finetune import finetune_model
 from evaluation import evaluate_and_print_metrics
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 from data import transform_mnist, transform_test_cifar
 from train_baseline_all_no_mtl import learn_baseline_all_clients as train_no_mtl_baseline_all_clients
 
@@ -91,8 +91,10 @@ def run_sequential_forgetting_no_mtl(
 
     if DATASET_NAME == "MNIST":
         test_base = MNIST(root=DATA_ROOT, train=False, download=True, transform=transform_mnist)
-    else:
+    elif DATASET_NAME == "CIFAR10":
         test_base = CIFAR10(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
+    else:
+        test_base = CIFAR100(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
     test_loader = DataLoader(test_base, batch_size=BATCH_SIZE, shuffle=False)
 
     for i, client_id in enumerate(clients_to_forget):

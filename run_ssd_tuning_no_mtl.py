@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import torch
 from torch.utils.data import DataLoader, Subset
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 import argparse
 
 from utils import set_global_seed, SEED_DEFAULT
@@ -70,8 +70,10 @@ forget_loader = DataLoader(forget_dataset, batch_size=BATCH_SIZE, shuffle=True)
 # Test loader
 if DATASET_NAME == "MNIST":
     test_base = MNIST(root=DATA_ROOT, train=False, download=True, transform=transform_mnist)
-else:
+elif DATASET_NAME == "CIFAR10":
     test_base = CIFAR10(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
+else:
+    test_base = CIFAR100(root=DATA_ROOT, train=False, download=True, transform=transform_test_cifar)
 test_loader = DataLoader(test_base, batch_size=BATCH_SIZE)
 
 # Load model

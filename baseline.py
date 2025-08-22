@@ -1,7 +1,7 @@
 import random
 import torch
 from torch.utils.data import DataLoader, Subset
-from torchvision.datasets import MNIST, CIFAR10
+from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 
 from utils import set_global_seed, SEED_DEFAULT
 from data import generate_subdatasets, MultiTaskDataset, transform_mnist, transform_test_cifar
@@ -119,11 +119,14 @@ def learn_baseline_excluding_clients(
     # 3) Test loader (official test split mapped to clients)
     if dataset_name == "MNIST":
         test_base = MNIST(root=data_root, train=False, download=True, transform=transform_mnist)
-    else:
+    elif dataset_name == "CIFAR10":
         test_base = CIFAR10(root=data_root, train=False, download=True, transform=transform_test_cifar)
+    else:
+        test_base = CIFAR100(root=data_root, train=False, download=True, transform=transform_test_cifar)
 
     # Replicate the class-aware distribution used earlier
-    test_class_indices = {i: [] for i in range(10)}
+    num_digit_classes = 100 if dataset_name == "CIFAR100" else 10
+    test_class_indices = {i: [] for i in range(num_digit_classes)}
     for idx, (_, lbl) in enumerate(test_base):
         test_class_indices[lbl].append(idx)
 
