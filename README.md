@@ -23,6 +23,7 @@ The code has been organized into the following modules:
 - **`tuning.py`** - Hyperparameter optimization for SSD using Optuna
 - **`visualization.py`** - Plotting functions for training results
 - **`main.py`** - CLI interface and main orchestration
+- **`analyze_clip_cifar_non_iid.py`** - CLIP-based feature separability analysis under non-IID partitions
 
 ## Usage
 
@@ -116,6 +117,36 @@ python main.py tune_ssd \
     --target_subset_id 0 \
     --n_trials 25
 ```
+
+#### 8. CLIP Feature Space Analysis (non-IID CIFAR-10, 10 clients)
+
+Compute embeddings using a large pretrained encoder (CLIP) and quantify how class separability exceeds client/user separability under a Dirichlet non-IID split. Generates metrics and t-SNE plots colored by class and by client.
+
+```bash
+# Install one of the CLIP providers first (choose one):
+pip install open_clip_torch  # recommended
+# or
+pip install git+https://github.com/openai/CLIP.git
+
+# Then run the analysis
+python analyze_clip_cifar_non_iid.py \
+  --num-clients 10 \
+  --alpha 0.3 \
+  --model ViT-B-32 \
+  --batch-size 128 \
+  --max-samples-total 20000 \
+  --tsne-points 5000 \
+  --data-root ./data \
+  --save-dir ./results/clip_cifar10_non_iid
+```
+
+Outputs written to `results/clip_cifar10_non_iid/`:
+- `metrics.json`: silhouette (cosine), Calinski-Harabasz, Davies-Bouldin, and linear-probe accuracies for class vs client labels
+- `embeddings_and_labels.npz`: features and labels for reproducible downstream analyses
+- `tsne_classes.png`: t-SNE colored by CIFAR-10 class (higher separability)
+- `tsne_clients.png`: t-SNE colored by client/user (lower separability)
+
+This demonstrates that removing users or pseudo-users is more challenging than removing classes due to lower feature separability in the representation space.
 
 ### Fine-tuning Options for Unlearning Methods
 
@@ -326,6 +357,7 @@ The project requires:
 - matplotlib
 - scikit-learn
 - optuna (for hyperparameter tuning)
+- open_clip_torch or openai-CLIP (for CLIP analysis)
 
 ## File Overview
 
