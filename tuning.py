@@ -96,25 +96,25 @@ def optimise_ssd_hyperparams(
     else:  # "mtl"
         BASELINES = {
             1: {
-                'per_client_target_digit_acc': {0: 0.9037},
-                'other_digit_acc': 0.9998,
+                'per_client_target_digit_acc': {0: 0.7059},
+                'other_digit_acc': 0.9990,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9974,
-                'test_digit_acc': 0.9130,
+                'other_subset_acc': 0.9967,
+                'test_digit_acc': 0.6517,
             },
             2: {
-                'per_client_target_digit_acc': {0: 0.9107, 1: 0.8945},
-                'other_digit_acc': 0.9999,
+                'per_client_target_digit_acc': {0: 0.7647, 1: 0.6757},
+                'other_digit_acc': 0.9990,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9985,
-                'test_digit_acc': 0.9052,
+                'other_subset_acc': 0.9961,
+                'test_digit_acc': 0.6448,
             },
             3: {
-                'per_client_target_digit_acc': {0: 0.9006, 1: 0.8945, 2: 0.9148},
-                'other_digit_acc': 0.9996,
+                'per_client_target_digit_acc': {0: 0.4706, 1: 0.5946, 2: 0.5094},
+                'other_digit_acc': 0.9993,
                 'target_subset_acc': 0.0000,
                 'other_subset_acc': 0.9966,
-                'test_digit_acc': 0.9025,
+                'test_digit_acc': 0.6470,
             },
         }
 
