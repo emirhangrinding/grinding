@@ -357,6 +357,8 @@ def evaluate_and_print_metrics(
     device,
     forgotten_client_loaders: Dict[int, torch.utils.data.DataLoader],
     current_forget_client_id: Optional[int] = None,
+    *,
+    ssd_print_style: bool = False,
 ):
     """
     Evaluates the model's performance and prints a comprehensive set of metrics,
@@ -374,18 +376,89 @@ def evaluate_and_print_metrics(
     model.eval()
     all_metrics = {}
 
-    # --- Metrics on Forgotten Sets ---
+    # If SSD print style requested, print in the requested order and wording,
+    # while still computing a comprehensive metrics dict for return.
+    if ssd_print_style:
+        # Order: previously forgotten clients, then the newly forgotten client
+        ordered_keys = list(forgotten_client_loaders.keys())
+        if current_forget_client_id is not None and current_forget_client_id in forgotten_client_loaders:
+            previously_forgotten = [cid for cid in ordered_keys if cid != current_forget_client_id]
+            ordered_ids = previously_forgotten + [current_forget_client_id]
+        else:
+            ordered_ids = ordered_keys
+
+        # Print metrics for forgotten clients in order
+        for cid in ordered_ids:
+            loader = forgotten_client_loaders[cid]
+            desc = (
+                "newly forgotten" if cid == current_forget_client_id else "previously forgotten"
+            )
+
+            # Digit accuracy on the specific client
+            target_digit_acc, _ = calculate_digit_classification_accuracy(
+                model, loader, device, target_subset_id=cid if is_mtl else None
+            )
+            print(
+                f"digit accuracy on client {cid} after SSD ({desc}): {target_digit_acc:.4f}"
+            )
+            all_metrics[f"Digit acc on client {cid} ({desc})"] = target_digit_acc
+
+            # Subset identification accuracy on the specific client (MTL only)
+            if is_mtl:
+                target_subset_acc, _ = calculate_subset_identification_accuracy(
+                    model, loader, device, target_subset_id=cid
+                )
+                print(
+                    f"subset id accuracy on client {cid} after SSD ({desc}): {target_subset_acc:.4f}"
+                )
+                all_metrics[f"Subset ID acc on client {cid} ({desc})"] = target_subset_acc
+
+        # Accuracies on other subsets (retain set)
+        dummy_id = -1
+        _, retain_digit_acc = calculate_digit_classification_accuracy(
+            model, retain_loader, device, target_subset_id=dummy_id
+        )
+        print(f"digit accuracy on other subsets after SSD: {retain_digit_acc:.4f}")
+        all_metrics["Digit accuracy on other subsets"] = retain_digit_acc
+
+        if is_mtl:
+            _, retain_subset_acc = calculate_subset_identification_accuracy(
+                model, retain_loader, device, target_subset_id=dummy_id
+            )
+            print(f"subset id accuracy on other subsets after SSD: {retain_subset_acc:.4f}")
+            all_metrics["Subset ID accuracy on other subsets"] = retain_subset_acc
+
+        # Test set accuracy
+        test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
+        print(f"[TEST] Digit accuracy after SSD: {test_acc:.4f}")
+        all_metrics["Test set accuracy"] = test_acc
+
+        # MIA score if applicable
+        if (
+            current_forget_client_id is not None
+            and current_forget_client_id in forgotten_client_loaders
+        ):
+            current_forget_loader = forgotten_client_loaders[current_forget_client_id]
+            mia_score = get_membership_attack_prob_train_only(
+                retain_loader, current_forget_loader, model
+            )
+            all_metrics["MIA Score (%)"] = mia_score
+
+        return all_metrics
+
+    # --- Default printing style (legacy) ---
+    # Metrics on Forgotten Sets
     for client_id, loader in forgotten_client_loaders.items():
-        description = "newly forgotten" if client_id == current_forget_client_id else "previously forgotten"
+        description = (
+            "newly forgotten" if client_id == current_forget_client_id else "previously forgotten"
+        )
         client_metrics = calculate_metrics_for_clients(
             model, is_mtl, loader, device, client_id, description
         )
         all_metrics.update(client_metrics)
 
-    # --- Metrics on Retain Set ---
-    # For retain set, we are interested in the "other" accuracy, as it excludes the target.
-    # We pass a dummy target_subset_id that doesn't exist to achieve this.
-    dummy_id = -1 
+    # Metrics on Retain Set (other subsets)
+    dummy_id = -1
     _, retain_digit_acc = calculate_digit_classification_accuracy(
         model, retain_loader, device, target_subset_id=dummy_id
     )
@@ -397,21 +470,20 @@ def evaluate_and_print_metrics(
         )
         all_metrics["Subset ID accuracy on other subsets"] = retain_subset_acc
 
-    # --- Metrics on Test Set ---
+    # Metrics on Test Set
     test_acc = calculate_overall_digit_classification_accuracy(model, test_loader, device)
     all_metrics["Test set accuracy"] = test_acc
-    
-    # --- Membership Inference Attack (MIA) ---
-    # The MIA is typically performed between the retain set and the *currently* forgotten set.
+
+    # MIA (retain vs current forget) when applicable
     if current_forget_client_id is not None and current_forget_client_id in forgotten_client_loaders:
         current_forget_loader = forgotten_client_loaders[current_forget_client_id]
         mia_score = get_membership_attack_prob_train_only(retain_loader, current_forget_loader, model)
         all_metrics["MIA Score (%)"] = mia_score
 
-    # --- Print all metrics in a structured way ---
+    # Print all metrics in a structured way
     print("\n--- Evaluation Metrics ---")
     for key, value in all_metrics.items():
         print(f"{key}: {value:.4f}")
     print("--------------------------\n")
-    
+
     return all_metrics

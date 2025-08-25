@@ -52,6 +52,23 @@ def run_sequential_forgetting(
     current_model_path = baseline_model_path
     # Allows starting from a later round by seeding previously forgotten clients
     forgotten_clients = list(initial_forgotten_clients) if initial_forgotten_clients else []
+
+    # If an initial unlearned model path is provided, try to infer previously forgotten clients
+    # from its filename pattern: ..._forgot_<id>_<id>_... .h5
+    if not forgotten_clients and initial_unlearned_model_path and os.path.exists(initial_unlearned_model_path):
+        base_name = os.path.basename(initial_unlearned_model_path)
+        # Find the segment after 'forgot_'
+        marker = "forgot_"
+        if marker in base_name:
+            try:
+                tail = base_name.split(marker, 1)[1]
+                tail = os.path.splitext(tail)[0]
+                inferred = [int(tok) for tok in tail.split("_") if tok.isdigit()]
+                if inferred:
+                    forgotten_clients = inferred
+                    print(f"Resuming with previously forgotten clients inferred from model name: {forgotten_clients}")
+            except Exception:
+                pass
     base_forgotten_count = len(forgotten_clients)
     
     # Generate the full client dataset structure once
@@ -224,7 +241,8 @@ def run_sequential_forgetting(
             test_loader=test_loader,
             device=device,
             forgotten_client_loaders=forgotten_client_loaders,
-            current_forget_client_id=client_id
+            current_forget_client_id=client_id,
+            ssd_print_style=True,
         )
 
         # Fine-tune the model
