@@ -180,3 +180,6 @@ losses_and_taylor_expansion.tex
 .gitignore
 main.tex
 main.bib
+results/cifar100_10clients_counts.png
+.gitignore
+results/cifar100_10clients_heatmap.png

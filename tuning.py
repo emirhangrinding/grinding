@@ -54,43 +54,43 @@ def optimise_ssd_hyperparams(
     if baseline_variant == "no_mtl":
         BASELINES = {
             1: {
-                'per_client_target_digit_acc': {0: 0.8983},
+                'per_client_target_digit_acc': {0: 0.5868},
                 'other_digit_acc': 0.9999,
-                'test_digit_acc': 0.9061,
+                'test_digit_acc': 0.6206,
             },
             2: {
-                'per_client_target_digit_acc': {0: 0.8951, 1: 0.8784},
-                'other_digit_acc': 1.0000,
-                'test_digit_acc': 0.8931,
+                'per_client_target_digit_acc': {0: 0.5520, 1: 0.5399},
+                'other_digit_acc': 0.9998,
+                'test_digit_acc': 0.6002,
             },
             3: {
-                'per_client_target_digit_acc': {0: 0.8757, 1: 0.8745, 2: 0.8912},
-                'other_digit_acc': 0.9999,
-                'test_digit_acc': 0.8919,
+                'per_client_target_digit_acc': {0: 0.5372, 1: 0.5224, 2: 0.4991},
+                'other_digit_acc': 0.9998,
+                'test_digit_acc': 0.5774,
             },
         }
     elif baseline_variant == "mtl_ce":
         BASELINES = {
             1: {
-                'per_client_target_digit_acc': {0: 0.8975},
-                'other_digit_acc': 0.9995,
+                'per_client_target_digit_acc': {0: 0.6414},
+                'other_digit_acc': 0.9997,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9909,
-                'test_digit_acc': 0.9042,
+                'other_subset_acc': 0.9994,
+                'test_digit_acc': 0.6691,
             },
             2: {
-                'per_client_target_digit_acc': {0: 0.8967, 1: 0.8843},
-                'other_digit_acc': 0.9995,
+                'per_client_target_digit_acc': {0: 0.6161, 1: 0.6072},
+                'other_digit_acc': 0.9998,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9940,
-                'test_digit_acc': 0.8986,
+                'other_subset_acc': 0.9993,
+                'test_digit_acc': 0.6570,
             },
             3: {
-                'per_client_target_digit_acc': {0: 0.8761, 1: 0.8765, 2: 0.8983},
-                'other_digit_acc': 0.9981,
+                'per_client_target_digit_acc': {0: 0.5990, 1: 0.5971, 2: 0.5620},
+                'other_digit_acc': 0.9998,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9735,
-                'test_digit_acc': 0.8869,
+                'other_subset_acc': 0.9995,
+                'test_digit_acc': 0.6413,
             },
         }
     else:  # "mtl"

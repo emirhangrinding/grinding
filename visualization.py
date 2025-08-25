@@ -117,3 +117,79 @@ def visualize_dirichlet_split_and_heatmap(dataset_name='CIFAR10', setting='non-i
         save_path=save_path,
         dpi=dpi,
     )
+
+
+def plot_client_sample_counts(clients_labels, title='Samples per Client', save_path='client_sample_counts.png', dpi=600):
+    """
+    Create a bar chart of total number of samples per client.
+
+    Args:
+        clients_labels: dict like {"client1": {0: n0, 1: n1, ...}, ...}
+        title: figure title
+        save_path: output file path
+        dpi: image DPI
+    """
+    # Ensure deterministic client order (client1, client2, ...)
+    client_keys = sorted(clients_labels.keys(), key=lambda k: int(k.replace('client', '')))
+
+    # Compute totals
+    client_totals = []
+    for ck in client_keys:
+        class_counts = clients_labels.get(ck, {})
+        total = int(sum(int(v) for v in class_counts.values()))
+        client_totals.append(total)
+
+    # Plot bar chart
+    fig, ax = plt.subplots(figsize=(max(8, len(client_keys) * 0.8), 5))
+    ax.bar(client_keys, client_totals, color='tab:blue')
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel('Client', fontsize=12)
+    ax.set_ylabel('Number of samples', fontsize=12)
+    ax.set_xticklabels(client_keys, rotation=45, ha='right')
+    ax.margins(x=0.01)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
+    plt.close(fig)
+
+
+def visualize_cifar100_10_clients(setting='non-iid', data_root='./data', save_prefix='cifar100_10clients', dpi=600):
+    """
+    Generate and save both per-client sample counts and class distribution heatmap
+    for CIFAR-100 with 10 clients, mirroring previous visualization style.
+
+    Args:
+        setting: data split setting, e.g., 'non-iid' or 'iid'
+        data_root: dataset root directory
+        save_prefix: prefix for the saved figure filenames
+        dpi: image DPI for saving
+    """
+    # Lazy import to avoid circular imports at module load time
+    from data import generate_subdatasets
+
+    dataset_name = 'CIFAR100'
+    num_clients = 10
+    num_classes = 100
+
+    clients_data, clients_labels, _ = generate_subdatasets(
+        dataset_name=dataset_name,
+        setting=setting,
+        num_clients=num_clients,
+        data_root=data_root
+    )
+
+    # 1) Bar chart of samples per client
+    plot_client_sample_counts(
+        clients_labels,
+        title=f'{dataset_name} {setting.upper()}: Samples per Client (N={num_clients})',
+        save_path=f'{save_prefix}_counts.png',
+        dpi=dpi,
+    )
+
+    # 2) Heatmap of class distribution per client
+    plot_client_class_heatmap(
+        clients_labels,
+        num_classes=num_classes,
+        title=f'{dataset_name} {setting.upper()} Dirichlet: Client-Class Distribution',
+        save_path=f'{save_prefix}_heatmap.png',
+        dpi=dpi,
+    )
