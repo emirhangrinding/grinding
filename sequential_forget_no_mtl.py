@@ -15,9 +15,9 @@ from train_baseline_all_no_mtl import learn_baseline_all_clients as train_no_mtl
 
 # --- Configuration ---
 IS_MTL = False
-DATASET_NAME = "CIFAR10"
+DATASET_NAME = "CIFAR100"
 NUM_CLIENTS = 10
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 DATA_ROOT = "./data"
 N_TRIALS = 100
 LR = 1e-4

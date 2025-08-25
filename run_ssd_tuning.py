@@ -11,11 +11,11 @@ from models import MTL_Two_Heads_ResNet
 from tuning import optimise_ssd_hyperparams
 
 # Configuration
-DATASET_NAME = "CIFAR10"
+DATASET_NAME = "CIFAR100"
 TARGET_SUBSET_ID = 0
 NUM_CLIENTS = 10
-BATCH_SIZE = 128
-N_TRIALS = 100
+BATCH_SIZE = 64
+N_TRIALS = 50
 DATA_ROOT = "./data"
 HEAD_SIZE = "medium"
 SEED = 42

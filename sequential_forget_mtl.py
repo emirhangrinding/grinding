@@ -16,9 +16,9 @@ from baseline import train_baseline_all_clients as train_mtl_baseline_all_client
 
 # --- Configuration ---
 IS_MTL = True
-DATASET_NAME = "CIFAR10"
+DATASET_NAME = "CIFAR100"
 NUM_CLIENTS = 10
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 DATA_ROOT = "./data"
 HEAD_SIZE = "medium"
 N_TRIALS = 100 
