@@ -40,6 +40,7 @@ def run_sequential_forgetting(
     kill_output_neuron: bool = True,
     digit_metrics_only: bool = False,
     calculate_fisher_on: str = "subset",
+    skip_finetune: bool = False,
 ):
     """
     Performs sequential unlearning on a list of clients.
@@ -245,6 +246,12 @@ def run_sequential_forgetting(
             ssd_print_style=True,
         )
 
+        # Optionally skip fine-tuning and chain SSD output to next round
+        if skip_finetune:
+            print("\n--- Skipping fine-tuning as requested; chaining SSD output to next stage ---")
+            current_model_path = unlearned_model_path
+            continue
+
         # Fine-tune the model
         print(f"\n--- Fine-tuning after forgetting client {client_id} ---")
         finetuned_model = finetune_model(
@@ -282,6 +289,7 @@ if __name__ == "__main__":
     parser.add_argument("--digit-metrics-only", action="store_true", help="Use only digit metrics during SSD tuning objective")
     parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="subset", help="Task to compute Fisher Information on during SSD")
     parser.add_argument("--kill-output-neuron", action="store_true", help="Suppress the target subset's output neuron during evaluation after SSD")
+    parser.add_argument("--skip-finetune", action="store_true", help="Bypass fine-tuning; chain SSD unlearned model to next round")
     args = parser.parse_args()
 
     resolved_lambda_digit = args.lambda_digit if args.lambda_digit is not None else float(os.environ.get("LAMBDA_DIGIT", "0.3"))
@@ -296,4 +304,5 @@ if __name__ == "__main__":
         kill_output_neuron=args.kill_output_neuron or True,
         digit_metrics_only=args.digit_metrics_only,
         calculate_fisher_on=args.fisher_on,
+        skip_finetune=args.skip_finetune,
     )

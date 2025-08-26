@@ -31,6 +31,7 @@ def run_sequential_forgetting_no_mtl(
     initial_unlearned_model_path=None,
     *,
     calculate_fisher_on: str = "digit",
+    skip_finetune: bool = False,
 ):
     """
     Performs sequential unlearning on a list of clients for a no-MTL model.
@@ -174,6 +175,12 @@ def run_sequential_forgetting_no_mtl(
             current_forget_client_id=client_id
         )
         
+        # Optionally skip fine-tuning and chain SSD output to next round
+        if skip_finetune:
+            print("\n--- Skipping fine-tuning as requested; chaining SSD output to next stage (no-MTL) ---")
+            current_model_path = unlearned_model_path
+            continue
+
         # Fine-tune the model
         print(f"\n--- Fine-tuning after forgetting client {client_id} (no-MTL) ---")
         finetuned_model = finetune_model(
@@ -206,6 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("--baseline-model-path", type=str, default=os.environ.get("BASELINE_MODEL_PATH", "/kaggle/input/no-mtl/pytorch/default/1/baseline_all_clients_model.h5"), help="Path to the baseline no-MTL model")
     parser.add_argument("--initial-unlearned-model-path", type=str, default=os.environ.get("INITIAL_UNLEARNED_MODEL_PATH", None), help="Optional: precomputed unlearned model for the first round")
     parser.add_argument("--fisher-on", type=str, choices=["subset", "digit"], default="digit", help="Task to compute Fisher Information on during SSD (no-MTL: digit recommended)")
+    parser.add_argument("--skip-finetune", action="store_true", help="Bypass fine-tuning; chain SSD unlearned model to next round")
     args = parser.parse_args()
 
     run_sequential_forgetting_no_mtl(
@@ -213,4 +221,5 @@ if __name__ == "__main__":
         baseline_model_path=args.baseline_model_path,
         initial_unlearned_model_path=args.initial_unlearned_model_path,
         calculate_fisher_on=args.fisher_on,
+        skip_finetune=args.skip_finetune,
     )
