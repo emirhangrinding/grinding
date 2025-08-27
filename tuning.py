@@ -54,67 +54,67 @@ def optimise_ssd_hyperparams(
     if baseline_variant == "no_mtl":
         BASELINES = {
             1: {
-                'per_client_target_digit_acc': {0: 0.5868},
+                'per_client_target_digit_acc': {0: 0.8983},
                 'other_digit_acc': 0.9999,
-                'test_digit_acc': 0.6206,
+                'test_digit_acc': 0.9061,
             },
             2: {
-                'per_client_target_digit_acc': {0: 0.5520, 1: 0.5399},
-                'other_digit_acc': 0.9998,
-                'test_digit_acc': 0.6002,
+                'per_client_target_digit_acc': {0: 0.8951, 1: 0.8784},
+                'other_digit_acc': 1.0000,
+                'test_digit_acc': 0.8931,
             },
             3: {
-                'per_client_target_digit_acc': {0: 0.5372, 1: 0.5224, 2: 0.4991},
-                'other_digit_acc': 0.9998,
-                'test_digit_acc': 0.5774,
+                'per_client_target_digit_acc': {0: 0.8757, 1: 0.8745, 2: 0.8912},
+                'other_digit_acc': 0.9999,
+                'test_digit_acc': 0.8919,
             },
         }
     elif baseline_variant == "mtl_ce":
         BASELINES = {
             1: {
-                'per_client_target_digit_acc': {0: 0.6414},
-                'other_digit_acc': 0.9997,
+                'per_client_target_digit_acc': {0: 0.8975},
+                'other_digit_acc': 0.9995,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9994,
-                'test_digit_acc': 0.6691,
+                'other_subset_acc': 0.9909,
+                'test_digit_acc': 0.9042,
             },
             2: {
-                'per_client_target_digit_acc': {0: 0.6161, 1: 0.6072},
-                'other_digit_acc': 0.9998,
+                'per_client_target_digit_acc': {0: 0.8967, 1: 0.8843},
+                'other_digit_acc': 0.9995,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9993,
-                'test_digit_acc': 0.6570,
+                'other_subset_acc': 0.9940,
+                'test_digit_acc': 0.8986,
             },
             3: {
-                'per_client_target_digit_acc': {0: 0.5990, 1: 0.5971, 2: 0.5620},
-                'other_digit_acc': 0.9998,
+                'per_client_target_digit_acc': {0: 0.8761, 1: 0.8765, 2: 0.8983},
+                'other_digit_acc': 0.9981,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9995,
-                'test_digit_acc': 0.6413,
+                'other_subset_acc': 0.9735,
+                'test_digit_acc': 0.8869,
             },
         }
     else:  # "mtl"
         BASELINES = {
             1: {
-                'per_client_target_digit_acc': {0: 0.6435},
+                'per_client_target_digit_acc': {0: 0.9037},
                 'other_digit_acc': 0.9998,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9995,
-                'test_digit_acc': 0.6908,
+                'other_subset_acc': 0.9974,
+                'test_digit_acc': 0.9130,
             },
             2: {
-                'per_client_target_digit_acc': {0: 0.6241, 1: 0.6151},
-                'other_digit_acc': 0.9998,
+                'per_client_target_digit_acc': {0: 0.9107, 1: 0.8945},
+                'other_digit_acc': 0.9999,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9966,
-                'test_digit_acc': 0.6686,
+                'other_subset_acc': 0.9985,
+                'test_digit_acc': 0.9052,
             },
             3: {
-                'per_client_target_digit_acc': {0: 0.6085, 1: 0.6035, 2: 0.5776},
-                'other_digit_acc': 0.9998,
+                'per_client_target_digit_acc': {0: 0.9006, 1: 0.8945, 2: 0.9148},
+                'other_digit_acc': 0.9996,
                 'target_subset_acc': 0.0000,
-                'other_subset_acc': 0.9996,
-                'test_digit_acc': 0.6495,
+                'other_subset_acc': 0.9966,
+                'test_digit_acc': 0.9025,
             },
         }
 
